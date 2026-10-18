@@ -47,7 +47,7 @@ func getJSON(ctx context.Context, hc *http.Client, u string, out any) error {
 	if err != nil {
 		return apierr.Unavailable("cannot reach %s: %v", u, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if resp.StatusCode != http.StatusOK {
 		return apierr.Unavailable("discovery failed: GET %s answered HTTP %d", u, resp.StatusCode)
@@ -202,9 +202,9 @@ func CallbackHandler(state string, ch chan<- Result) http.Handler {
 		code, err := CodeFromQuery(r.URL.Query(), state)
 		if err != nil {
 			w.WriteHeader(http.StatusBadRequest)
-			fmt.Fprintln(w, "Sign-in failed. Return to the terminal.")
+			_, _ = fmt.Fprintln(w, "Sign-in failed. Return to the terminal.")
 		} else {
-			fmt.Fprintln(w, "Signed in. You can close this tab.")
+			_, _ = fmt.Fprintln(w, "Signed in. You can close this tab.")
 		}
 		once.Do(func() { ch <- Result{Code: code, Err: err} })
 	})
@@ -266,7 +266,7 @@ func postToken(ctx context.Context, hc *http.Client, endpoint string, form url.V
 	if err != nil {
 		return tr, apierr.Unavailable("cannot reach the token endpoint: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	_ = json.Unmarshal(body, &tr)
 	if resp.StatusCode != http.StatusOK || tr.AccessToken == "" {

@@ -91,7 +91,7 @@ func TestSaveLoad(t *testing.T) {
 		t.Fatalf("%+v %v", out, err)
 	}
 	d, _ := Dir()
-	os.WriteFile(filepath.Join(d, "config.yml"), []byte("profiles: [broken"), 0o600)
+	_ = os.WriteFile(filepath.Join(d, "config.yml"), []byte("profiles: [broken"), 0o600)
 	if _, err := Load(); err == nil {
 		t.Fatal("broken yaml accepted")
 	}

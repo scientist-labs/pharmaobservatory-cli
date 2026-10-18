@@ -25,12 +25,12 @@ func newWhoamiCmd(g *globals, d Deps) *cobra.Command {
 			out := cmd.OutOrStdout()
 			if err != nil {
 				if g.json && len(body) > 0 {
-					fmt.Fprintln(out, strings.TrimSpace(string(body)))
+					_, _ = fmt.Fprintln(out, strings.TrimSpace(string(body)))
 				}
 				return err
 			}
 			if g.json {
-				fmt.Fprintln(out, strings.TrimSpace(string(body)))
+				_, _ = fmt.Fprintln(out, strings.TrimSpace(string(body)))
 				return nil
 			}
 			var w struct {
@@ -40,7 +40,7 @@ func newWhoamiCmd(g *globals, d Deps) *cobra.Command {
 			if err := json.Unmarshal(body, &w); err != nil {
 				return fmt.Errorf("whoami: unreadable response: %w", err)
 			}
-			fmt.Fprintf(out, "profile: %s\norigin:  %s\nsub:     %s\nroles:   %s\n",
+			_, _ = fmt.Fprintf(out, "profile: %s\norigin:  %s\nsub:     %s\nroles:   %s\n",
 				s.Profile.Name, s.Profile.Origin, w.Sub, strings.Join(w.Roles, ", "))
 			return nil
 		},
@@ -60,7 +60,7 @@ func newLogoutCmd(g *globals, d Deps) *cobra.Command {
 			}
 			if _, err := s.Store.Get(s.Profile.Name); err != nil {
 				if err == store.ErrNotFound {
-					fmt.Fprintf(cmd.OutOrStdout(), "Not logged in to %s; nothing to remove.\n", s.Profile.Name)
+					_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Not logged in to %s; nothing to remove.\n", s.Profile.Name)
 					return nil
 				}
 				return err
@@ -68,7 +68,7 @@ func newLogoutCmd(g *globals, d Deps) *cobra.Command {
 			if err := s.Store.Delete(s.Profile.Name); err != nil {
 				return err
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "Logged out of %s (removed from the %s).\n", s.Profile.Name, s.Store.Name())
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Logged out of %s (removed from the %s).\n", s.Profile.Name, s.Store.Name())
 			return nil
 		},
 	}
@@ -100,7 +100,7 @@ func newAuthCmd(g *globals, d Deps) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "Refreshed %s: aud %s, access token expires %s.\n",
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Refreshed %s: aud %s, access token expires %s.\n",
 				s.Profile.Name, n.Aud, n.ExpiresAt.UTC().Format("2006-01-02T15:04:05Z"))
 			return nil
 		},

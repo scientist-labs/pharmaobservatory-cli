@@ -56,8 +56,8 @@ func newLoginCmd(g *globals, d Deps) *cobra.Command {
 
 			var code string
 			if noBrowser {
-				fmt.Fprintf(out, "Open this URL in any browser and sign in:\n\n%s\n\n", authURL)
-				fmt.Fprintf(out, "The browser will then fail to load %s?code=...&state=... .\nPaste that full URL (or just the code) here: ", redirect)
+				_, _ = fmt.Fprintf(out, "Open this URL in any browser and sign in:\n\n%s\n\n", authURL)
+				_, _ = fmt.Fprintf(out, "The browser will then fail to load %s?code=...&state=... .\nPaste that full URL (or just the code) here: ", redirect)
 				line, _ := bufio.NewReader(d.Stdin).ReadString('\n')
 				if code, err = auth.ParsePasted(line, state); err != nil {
 					return err
@@ -67,9 +67,9 @@ func newLoginCmd(g *globals, d Deps) *cobra.Command {
 				if err != nil {
 					return apierr.Usage(err)
 				}
-				fmt.Fprintf(out, "Opening the browser (if nothing opens, re-run with --no-browser):\n%s\n", authURL)
+				_, _ = fmt.Fprintf(out, "Opening the browser (if nothing opens, re-run with --no-browser):\n%s\n", authURL)
 				if err := d.OpenBrowser(authURL); err != nil {
-					fmt.Fprintf(out, "Could not open a browser (%v); open the URL above yourself.\n", err)
+					_, _ = fmt.Fprintf(out, "Could not open a browser (%v); open the URL above yourself.\n", err)
 				}
 				if code, err = auth.WaitCallback(ctx, ln, state, d.CallbackWait); err != nil {
 					return err
@@ -89,7 +89,7 @@ func newLoginCmd(g *globals, d Deps) *cobra.Command {
 				if st.Name() == "file" {
 					return err
 				}
-				fmt.Fprintf(out, "Keychain unavailable (%v); using the credentials file instead.\n", err)
+				_, _ = fmt.Fprintf(out, "Keychain unavailable (%v); using the credentials file instead.\n", err)
 				dir, derr := config.EnsureDir()
 				if derr != nil {
 					return derr
@@ -105,7 +105,7 @@ func newLoginCmd(g *globals, d Deps) *cobra.Command {
 					return err
 				}
 			}
-			fmt.Fprintf(out, "Logged in to %s (%s) as %s. Credential stored in the %s.\n", p.Name, p.Origin, cred.Sub, st.Name())
+			_, _ = fmt.Fprintf(out, "Logged in to %s (%s) as %s. Credential stored in the %s.\n", p.Name, p.Origin, cred.Sub, st.Name())
 			return nil
 		},
 	}

@@ -97,7 +97,7 @@ func TestFileStoreRoundTripAndMode(t *testing.T) {
 
 func TestFileStoreCorrupt(t *testing.T) {
 	dir := t.TempDir()
-	os.WriteFile(filepath.Join(dir, "credentials.json"), []byte("{nope"), 0o600)
+	_ = os.WriteFile(filepath.Join(dir, "credentials.json"), []byte("{nope"), 0o600)
 	s := FileStore{Dir: dir}
 	if _, err := s.Get("p"); err == nil {
 		t.Fatal("corrupt file accepted")
@@ -167,11 +167,11 @@ func TestOpenPrefersFileWhenLoginFellBack(t *testing.T) {
 	t.Setenv("PO_CONFIG_DIR", dir)
 	t.Setenv("PO_CREDENTIAL_STORE", "")
 	kr := NewFake()
-	FileStore{Dir: dir}.Set("prod", cred())
+	_ = FileStore{Dir: dir}.Set("prod", cred())
 	if s, _ := Open(kr, "prod"); s.Name() != "file" {
 		t.Fatal("fell-back login not found")
 	}
-	KeychainStore{KR: kr}.Set("prod", cred())
+	_ = KeychainStore{KR: kr}.Set("prod", cred())
 	if s, _ := Open(kr, "prod"); s.Name() != "keychain" {
 		t.Fatal("keychain entry must win")
 	}

@@ -136,7 +136,7 @@ func TestLoopbackCallback(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	r := <-ch
 	if r.err != nil || r.code != "abc" {
 		t.Fatalf("%q %v", r.code, r.err)
@@ -152,7 +152,7 @@ func TestLoopbackStateMismatchAndError(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		if resp.StatusCode != http.StatusBadRequest {
 			t.Errorf("%s: status %d", q, resp.StatusCode)
 		}
@@ -177,7 +177,7 @@ func TestLoopbackTimeoutAndCancel(t *testing.T) {
 
 func TestListenBusyPort(t *testing.T) {
 	ln, _ := Listen(0)
-	defer ln.Close()
+	defer func() { _ = ln.Close() }()
 	port := ln.Addr().(interface{ String() string }).String()
 	var p int
 	for _, ch := range port[strings.LastIndex(port, ":")+1:] {
@@ -201,29 +201,29 @@ func newIDP(t *testing.T, aud any) *idp {
 	f := &idp{aud: aud}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/.well-known/oauth-protected-resource/api/v1", func(w http.ResponseWriter, _ *http.Request) {
-		json.NewEncoder(w).Encode(map[string]any{
+		_ = json.NewEncoder(w).Encode(map[string]any{
 			"authorization_servers": []string{f.srv.URL + "/"},
 			"scopes_supported":      []string{"openid", "example:api"},
 		})
 	})
 	mux.HandleFunc("/.well-known/oauth-authorization-server", func(w http.ResponseWriter, _ *http.Request) {
-		json.NewEncoder(w).Encode(map[string]any{
+		_ = json.NewEncoder(w).Encode(map[string]any{
 			"authorization_endpoint": f.srv.URL + "/authorize", "token_endpoint": f.srv.URL + "/token",
 		})
 	})
 	mux.HandleFunc("/token", func(w http.ResponseWriter, r *http.Request) {
-		r.ParseForm()
+		_ = r.ParseForm()
 		f.forms = append(f.forms, r.PostForm)
 		if f.status != 0 {
 			w.WriteHeader(f.status)
-			json.NewEncoder(w).Encode(map[string]any{"error": "invalid_grant", "error_description": "bad"})
+			_ = json.NewEncoder(w).Encode(map[string]any{"error": "invalid_grant", "error_description": "bad"})
 			return
 		}
 		resp := map[string]any{"access_token": jwt(map[string]any{"aud": f.aud, "sub": "user_1"}), "expires_in": 300}
 		if !f.noRefresh {
 			resp["refresh_token"] = "rt-" + r.PostForm.Get("grant_type")
 		}
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	})
 	f.srv = httptest.NewServer(mux)
 	t.Cleanup(f.srv.Close)
@@ -250,7 +250,7 @@ func TestDiscoverFailures(t *testing.T) {
 	if _, err := Discover(context.Background(), down.Client(), down.URL); apierr.ExitCode(err) != apierr.ExitUnavail {
 		t.Fatalf("404 discovery: %v", err)
 	}
-	empty := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.Write([]byte(`{}`)) }))
+	empty := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte(`{}`)) }))
 	defer empty.Close()
 	if _, err := Discover(context.Background(), empty.Client(), empty.URL); err == nil {
 		t.Fatal("no authorization_servers accepted")

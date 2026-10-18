@@ -98,7 +98,7 @@ func (s *Session) do(ctx context.Context, path, token string) (int, []byte, erro
 	if err != nil {
 		return 0, nil, apierr.Unavailable("cannot reach %s: %v", s.Profile.Base(), err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	b, err := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
 	return resp.StatusCode, b, err
 }

@@ -88,17 +88,17 @@ func newEnv(t *testing.T) *env {
 	t.Setenv("PO_PROFILE", "")
 	mux := http.NewServeMux()
 	mux.HandleFunc("/.well-known/oauth-protected-resource/api/v1", func(w http.ResponseWriter, _ *http.Request) {
-		json.NewEncoder(w).Encode(map[string]any{"authorization_servers": []string{e.srv.URL}, "scopes_supported": []string{"example:api"}})
+		_ = json.NewEncoder(w).Encode(map[string]any{"authorization_servers": []string{e.srv.URL}, "scopes_supported": []string{"example:api"}})
 	})
 	mux.HandleFunc("/.well-known/oauth-authorization-server", func(w http.ResponseWriter, _ *http.Request) {
-		json.NewEncoder(w).Encode(map[string]any{"authorization_endpoint": e.srv.URL + "/authorize", "token_endpoint": e.srv.URL + "/token"})
+		_ = json.NewEncoder(w).Encode(map[string]any{"authorization_endpoint": e.srv.URL + "/authorize", "token_endpoint": e.srv.URL + "/token"})
 	})
 	mux.HandleFunc("/token", func(w http.ResponseWriter, r *http.Request) {
-		r.ParseForm()
+		_ = r.ParseForm()
 		e.forms = append(e.forms, r.PostForm)
 		if e.refuse {
 			w.WriteHeader(400)
-			w.Write([]byte(`{"error":"invalid_grant"}`))
+			_, _ = w.Write([]byte(`{"error":"invalid_grant"}`))
 			return
 		}
 		e.tokenN++
@@ -106,7 +106,7 @@ func newEnv(t *testing.T) *env {
 		if e.aud != "" {
 			aud = e.aud
 		}
-		json.NewEncoder(w).Encode(map[string]any{
+		_ = json.NewEncoder(w).Encode(map[string]any{
 			"access_token": jwtFor(aud, "user_1", e.tokenN), "refresh_token": "rt" + string(rune('0'+e.tokenN)), "expires_in": 300,
 		})
 	})
@@ -117,7 +117,7 @@ func newEnv(t *testing.T) *env {
 			e.whoami(w, r)
 			return
 		}
-		w.Write([]byte(`{"ok":true,"sub":"user_1","roles":["example:api","example:read"]}`))
+		_, _ = w.Write([]byte(`{"ok":true,"sub":"user_1","roles":["example:api","example:read"]}`))
 	})
 	e.srv = httptest.NewServer(mux)
 	t.Cleanup(e.srv.Close)
@@ -275,7 +275,7 @@ func TestLoginLoopbackStoresIdenticalResult(t *testing.T) {
 		go func() {
 			resp, err := http.Get(q.Get("redirect_uri") + "?code=loop&state=" + q.Get("state"))
 			if err == nil {
-				resp.Body.Close()
+				_ = resp.Body.Close()
 			}
 		}()
 		return nil
@@ -304,7 +304,7 @@ func TestLoginLoopbackStateMismatchStoresNothing(t *testing.T) {
 		go func() {
 			resp, err := http.Get(q.Get("redirect_uri") + "?code=loop&state=forged")
 			if err == nil {
-				resp.Body.Close()
+				_ = resp.Body.Close()
 			}
 		}()
 		return nil
@@ -323,7 +323,7 @@ func TestLoginLoopbackCallbackError(t *testing.T) {
 		go func() {
 			resp, err := http.Get(q.Get("redirect_uri") + "?error=access_denied&error_description=nope&state=" + q.Get("state"))
 			if err == nil {
-				resp.Body.Close()
+				_ = resp.Body.Close()
 			}
 		}()
 		return nil
@@ -413,7 +413,7 @@ func TestWhoamiAndJSON(t *testing.T) {
 func TestWhoamiRefreshesOnExpiryTransparently(t *testing.T) {
 	e := newEnv(t)
 	e.stdin = "c\n"
-	e.login("--no-browser")
+	_, _ = e.login("--no-browser")
 	if len(e.forms) != 1 {
 		t.Fatal("setup")
 	}
@@ -443,10 +443,10 @@ func TestWhoamiRefreshesOnExpiryTransparently(t *testing.T) {
 func TestWhoamiRetriesExpiredTokenExactlyOnce(t *testing.T) {
 	e := newEnv(t)
 	e.stdin = "c\n"
-	e.login("--no-browser")
+	_, _ = e.login("--no-browser")
 	e.whoami = func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(401)
-		w.Write([]byte(`{"error":"expired_token"}`))
+		_, _ = w.Write([]byte(`{"error":"expired_token"}`))
 	}
 	_, err := e.run("whoami", "--profile", "local")
 	if apierr.ExitCode(err) != apierr.ExitAuth || e.whoamis != 2 || len(e.forms) != 2 {
@@ -457,10 +457,10 @@ func TestWhoamiRetriesExpiredTokenExactlyOnce(t *testing.T) {
 func TestWhoamiInvalidAudienceNeverRetried(t *testing.T) {
 	e := newEnv(t)
 	e.stdin = "c\n"
-	e.login("--no-browser")
+	_, _ = e.login("--no-browser")
 	e.whoami = func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(401)
-		w.Write([]byte(`{"error":"invalid_audience"}`))
+		_, _ = w.Write([]byte(`{"error":"invalid_audience"}`))
 	}
 	out, err := e.run("whoami", "--profile", "local", "--json")
 	if apierr.ExitCode(err) != apierr.ExitAuth || e.whoamis != 1 || len(e.forms) != 1 || !strings.Contains(err.Error(), "invalid_audience") {
@@ -485,10 +485,10 @@ func TestWhoamiRefusalRendering(t *testing.T) {
 	for _, c := range cases {
 		e := newEnv(t)
 		e.stdin = "c\n"
-		e.login("--no-browser")
+		_, _ = e.login("--no-browser")
 		e.whoami = func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(c.status)
-			w.Write([]byte(c.body))
+			_, _ = w.Write([]byte(c.body))
 		}
 		_, err := e.run("whoami", "--profile", "local")
 		if apierr.ExitCode(err) != c.code || !strings.Contains(err.Error(), c.want) {
@@ -500,8 +500,8 @@ func TestWhoamiRefusalRendering(t *testing.T) {
 func TestWhoamiUnreadableBody(t *testing.T) {
 	e := newEnv(t)
 	e.stdin = "c\n"
-	e.login("--no-browser")
-	e.whoami = func(w http.ResponseWriter, _ *http.Request) { w.Write([]byte(`<html>`)) }
+	_, _ = e.login("--no-browser")
+	e.whoami = func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte(`<html>`)) }
 	if _, err := e.run("whoami", "--profile", "local"); err == nil {
 		t.Fatal("garbage accepted")
 	}
@@ -510,7 +510,7 @@ func TestWhoamiUnreadableBody(t *testing.T) {
 func TestLogoutThenWhoamiIsExit3(t *testing.T) {
 	e := newEnv(t)
 	e.stdin = "c\n"
-	e.login("--no-browser")
+	_, _ = e.login("--no-browser")
 	out, err := e.run("logout", "--profile", "local")
 	if err != nil || !strings.Contains(out, "Logged out of local (removed from the keychain)") {
 		t.Fatalf("%v %s", err, out)
@@ -599,10 +599,10 @@ func TestPOCredentialStoreFile(t *testing.T) {
 func TestWhoamiProfileOriginMismatchRefusedLocally(t *testing.T) {
 	e := newEnv(t)
 	e.stdin = "c\n"
-	e.login("--no-browser")
+	_, _ = e.login("--no-browser")
 	// Same profile name, now pointing at a different origin: the stored aud no longer matches.
 	f := filepath.Join(os.Getenv("PO_CONFIG_DIR"), "config.yml")
-	os.WriteFile(f, []byte("profiles:\n  local:\n    origin: "+e.srv.URL+"\n    client_id: client_other\n"), 0o600)
+	_ = os.WriteFile(f, []byte("profiles:\n  local:\n    origin: "+e.srv.URL+"\n    client_id: client_other\n"), 0o600)
 	_, err := e.run("whoami", "--profile", "local")
 	if apierr.ExitCode(err) != apierr.ExitAuth || e.whoamis != 0 || !strings.Contains(err.Error(), "po login --profile local") {
 		t.Fatalf("%v whoamis=%d", err, e.whoamis)
@@ -639,7 +639,7 @@ func TestAPIBaseKeepsAudience(t *testing.T) {
 func TestAuthRefreshCommand(t *testing.T) {
 	e := newEnv(t)
 	e.stdin = "c\n"
-	e.login("--no-browser")
+	_, _ = e.login("--no-browser")
 	out, err := e.run("auth", "refresh", "--profile", "local")
 	if err != nil || !strings.Contains(out, "aud "+e.srv.URL+"/api/v1") || len(e.forms) != 2 {
 		t.Fatalf("%v %s", err, out)
@@ -650,7 +650,7 @@ func TestAuthRefreshCommand(t *testing.T) {
 	if _, err := e.run("auth", "bogus"); apierr.ExitCode(err) != apierr.ExitUsage {
 		t.Fatalf("%v", err)
 	}
-	e.run("logout", "--profile", "local")
+	_, _ = e.run("logout", "--profile", "local")
 	if _, err := e.run("auth", "refresh", "--profile", "local"); apierr.ExitCode(err) != apierr.ExitAuth {
 		t.Fatalf("%v", err)
 	}
@@ -659,7 +659,7 @@ func TestAuthRefreshCommand(t *testing.T) {
 func TestRefreshRejectedAsksForLogin(t *testing.T) {
 	e := newEnv(t)
 	e.stdin = "c\n"
-	e.login("--no-browser")
+	_, _ = e.login("--no-browser")
 	e.clock = e.clock.Add(time.Hour)
 	e.refuse = true
 	_, err := e.run("whoami", "--profile", "local")
