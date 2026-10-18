@@ -2,6 +2,7 @@ package output
 
 import (
 	"fmt"
+	"github.com/scientist-labs/pharmaobservatory-cli/internal/sanitize"
 	"io"
 	"strconv"
 	"strings"
@@ -30,10 +31,10 @@ func AttributionLines(e *Envelope) []string {
 		if a.Href != "" {
 			parts = append(parts, a.Href)
 		}
-		out = append(out, Line(strings.Join(parts, " ")))
+		out = append(out, sanitize.Line(strings.Join(parts, " ")))
 	}
 	if e.AttrText != "" {
-		out = append(out, Line(e.AttrText))
+		out = append(out, sanitize.Line(e.AttrText))
 	}
 	return out
 }
@@ -51,7 +52,7 @@ func WriteFooter(w io.Writer, e *Envelope, o FooterOpts) {
 	for _, l := range AttributionLines(e) {
 		_, _ = fmt.Fprintln(w, l)
 	}
-	say := func(s string) { _, _ = fmt.Fprintln(w, Line(s)) }
+	say := func(s string) { _, _ = fmt.Fprintln(w, sanitize.Line(s)) }
 	if o.Quiet {
 		return
 	}

@@ -45,12 +45,12 @@ func TestFromResponse(t *testing.T) {
 		{418, strings.Repeat("x", 500), ExitUnexpected, "HTTP 418"},
 	}
 	for _, c := range cases {
-		err := FromResponse(c.status, []byte(c.body), "prod")
+		err := FromResponse(c.status, nil, []byte(c.body), "prod")
 		if ExitCode(err) != c.code || !strings.Contains(err.Error(), c.want) {
 			t.Errorf("%d %s: code %d msg %q", c.status, c.body[:min(len(c.body), 30)], ExitCode(err), err)
 		}
 	}
-	if len(FromResponse(418, []byte(strings.Repeat("x", 500)), "p").Error()) > 400 {
+	if len(FromResponse(418, nil, []byte(strings.Repeat("x", 500)), "p").Error()) > 400 {
 		t.Error("raw body not truncated")
 	}
 }

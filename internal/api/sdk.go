@@ -18,7 +18,7 @@ func (s *Session) SDK(userAgent string) *sdk.APIClient {
 	cfg.Servers = sdk.ServerConfigurations{{URL: s.Profile.Base()}}
 	cfg.OperationServers = nil
 	cfg.UserAgent = userAgent
-	cfg.HTTPClient = &http.Client{Transport: &bearerTransport{s: s}, Timeout: s.HC.Timeout}
+	cfg.HTTPClient = &http.Client{Transport: &bearerTransport{s: s}, Timeout: s.HC.Timeout, CheckRedirect: apierr.SecureRedirect}
 	return sdk.NewAPIClient(cfg)
 }
 
@@ -29,14 +29,34 @@ func (t *bearerTransport) send(req *http.Request, token string) (*http.Response,
 	r.Header.Set("Authorization", "Bearer "+token)
 	resp, err := t.s.HC.Do(r)
 	if err != nil {
+		if u := apierr.UsageCause(err); u != nil {
+			return nil, u
+		}
 		return nil, apierr.Unavailable("cannot reach %s: %v", t.s.Profile.Base(), err)
 	}
 	return resp, nil
 }
 
 // RoundTrip sends a GET with the bearer. A 401 expired_token refreshes and retries exactly once;
-// invalid_audience is never retried. Every call here is a bodyless GET, so a replay is safe.
+// invalid_audience is never retried. Under Wait a 429 with a usable Retry-After sleeps and retries
+// once. Every call here is a bodyless GET, so a replay is safe.
 func (t *bearerTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	resp, err := t.authed(req)
+	if err != nil || !t.s.Wait || resp.StatusCode != http.StatusTooManyRequests {
+		return resp, err
+	}
+	d, ok := t.s.waitDelay(resp.StatusCode, resp.Header)
+	if !ok {
+		return resp, nil
+	}
+	_ = resp.Body.Close()
+	if err := t.s.pause(req.Context(), d); err != nil {
+		return nil, err
+	}
+	return t.authed(req)
+}
+
+func (t *bearerTransport) authed(req *http.Request) (*http.Response, error) {
 	c, err := t.s.Fresh(req.Context())
 	if err != nil {
 		return nil, err

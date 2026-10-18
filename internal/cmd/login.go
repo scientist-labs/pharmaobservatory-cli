@@ -25,11 +25,14 @@ func newLoginCmd(g *globals, d Deps) *cobra.Command {
 		Long: "Sign in with the browser authorization code flow (PKCE). With --no-browser the authorize URL is\n" +
 			"printed; sign in on any machine, then paste the full URL the browser fails to load, or just its code.\n" +
 			"Create or update a custom profile with --profile NAME --origin URL [--client-id ID] [--api-base URL].",
-		Args: cobra.NoArgs,
+		Args: noArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			out := cmd.OutOrStdout()
 			p, f, err := g.resolveForLogin(origin, clientID)
 			if err != nil {
+				if apierr.ExitCode(err) == apierr.ExitUsage {
+					return err
+				}
 				return apierr.Usage(err)
 			}
 			ctx := ctxOf(cmd.Context())
@@ -137,6 +140,9 @@ func (g *globals) resolveForLogin(origin, clientID string) (config.Profile, conf
 	}
 	if g.apiBase != "" {
 		p.APIBase = g.apiBase
+	}
+	if err := checkSecure(p); err != nil {
+		return p, f, err
 	}
 	return p, f, nil
 }

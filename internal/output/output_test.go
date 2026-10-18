@@ -128,3 +128,32 @@ func TestHostileCellsCleanInTableAndCSV(t *testing.T) {
 		t.Fatalf("csv keeps legit newline, drops controls: %q", b.String())
 	}
 }
+
+func TestHostileUnicodeInCreditStateTableAndCSV(t *testing.T) {
+	const bad = "\u2028\u2029\u202E\u200B"
+	e, err := Parse([]byte(`{"columns":[{"key":"id","label":"ID"}],"rows":[{"id":"r"}],` +
+		`"attribution":[{"name":"HG\u2028NC\u202E\u200B","license":null,"href":""}]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var b bytes.Buffer
+	WriteCredits(&b, e)
+	if out := b.String(); strings.ContainsAny(out, bad) || strings.Count(out, "\n") != 1 || !strings.Contains(out, "HG NC") {
+		t.Fatalf("credit: %q", out)
+	}
+	st := &Envelope{Error: "not_applicable", Message: "a\u2028b\u2029c\u202Ed\u200Be"}
+	if err := st.State(); err == nil || err.Error() != "not applicable: a b cde" {
+		t.Fatalf("state: %v", err)
+	}
+	g := Grid{Header: []string{"a"}, Rows: [][]string{{"x\u2028y\u202Ez\u200Bw"}}}
+	var tb bytes.Buffer
+	_ = WriteTable(&tb, g, 0)
+	if strings.ContainsAny(tb.String(), "\u2029\u202E\u200B") || !strings.Contains(tb.String(), "x yzw") {
+		t.Fatalf("table: %q", tb.String())
+	}
+	var cb bytes.Buffer
+	_ = WriteCSV(&cb, g.Header, g.Rows)
+	if strings.ContainsAny(cb.String(), "\u202E\u200B") || !strings.Contains(cb.String(), "x\u2028yzw") {
+		t.Fatalf("csv: %q", cb.String())
+	}
+}

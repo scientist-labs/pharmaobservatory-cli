@@ -35,10 +35,10 @@ GNUPGHOME=$(mktemp -d)
 export GNUPGHOME
 chmod 700 "$GNUPGHOME"
 trap 'rm -rf "$GNUPGHOME"' EXIT
-printf '%s\n' "$GPG_PRIVATE_KEY" | gpg --batch --quiet --pinentry-mode loopback --passphrase "$GPG_PASSPHRASE" --import
+printf '%s\n' "$GPG_PRIVATE_KEY" | gpg --batch --quiet --pinentry-mode loopback --passphrase-fd 3 --import 3<<<"$GPG_PASSPHRASE"
 fpr=$(gpg --batch --with-colons --list-secret-keys | awk -F: '/^fpr/{print $10; exit}')
 [ -n "$fpr" ] || { echo "no secret key imported" >&2; exit 1; }
-sign() { gpg --batch --yes --quiet --pinentry-mode loopback --passphrase "$GPG_PASSPHRASE" --local-user "$fpr" "$@"; }
+sign() { gpg --batch --yes --quiet --pinentry-mode loopback --passphrase-fd 3 --local-user "$fpr" "$@" 3<<<"$GPG_PASSPHRASE"; }
 
 # The published public key must be the one that signs; a mismatch would ship a repository nobody can verify.
 want=$(gpg --batch --with-colons --show-keys "$here/pharmaobservatory-archive-keyring.asc" | awk -F: '/^fpr/{print $10; exit}')

@@ -2,12 +2,12 @@
 version: 2
 project_name: pharmaobservatory
 
-# THE BINARY NAME LIVES HERE AND ONLY HERE (epic #4931 has not settled it; `po` for now). Archives,
-# the build output, the deb/rpm /usr/bin entry, the brew test and install, the root command's `Use`,
-# `version` output and User-Agent (via the binaryName ldflag below) all read BINARY_NAME. To rename
-# the executable change the next line. The module path, cmd/po, the PO_* environment variables, the
-# config directory and the `po login` hints in error text are literals in Go source and are NOT
-# derived: see packaging/README.md for the full rename list.
+# THE EXECUTABLE NAME IS SET HERE (epic #4931 has not settled it; `po` for now). Archives, the build
+# output, the deb/rpm /usr/bin entry, the brew test and install, and, through the apierr.Bin ldflag
+# below, the root command, `version`, help and error text and the User-Agent all read BINARY_NAME. To
+# rename the executable change the next line. The module path, the cmd/po directory, the PO_*
+# environment variables, the config directory and the keychain service name are literals NOT derived
+# from it: see packaging/README.md for the full rename list.
 env:
   - BINARY_NAME=po
 
@@ -32,7 +32,7 @@ builds:
       - -X github.com/scientist-labs/pharmaobservatory-cli/internal/cmd.version={{.Version}}
       - -X github.com/scientist-labs/pharmaobservatory-cli/internal/cmd.commit={{.Commit}}
       - -X github.com/scientist-labs/pharmaobservatory-cli/internal/cmd.date={{.Date}}
-      - -X github.com/scientist-labs/pharmaobservatory-cli/internal/cmd.binaryName={{ .Env.BINARY_NAME }}
+      - -X github.com/scientist-labs/pharmaobservatory-cli/internal/apierr.Bin={{ .Env.BINARY_NAME }}
 
 archives:
   - id: cli
@@ -117,6 +117,8 @@ brews:
       branch: main
       git:
         url: git@github.com:scientist-labs/homebrew-pharmaobservatory.git
+        # Pinned host keys, installed by release.yml from packaging/github_known_hosts.
+        ssh_command: ssh -i {{ .KeyPath }} -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/pharmaobservatory_known_hosts -F /dev/null
         private_key: '{{ index .Env "TAP_DEPLOY_KEY" }}'
     commit_author:
       name: pharmaobservatory-release

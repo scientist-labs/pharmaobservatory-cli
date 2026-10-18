@@ -4,6 +4,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"github.com/scientist-labs/pharmaobservatory-cli/internal/apierr"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -132,7 +133,7 @@ func Resolve(name string, f File) (Profile, error) {
 	p, builtin := builtins[name]
 	over, inFile := f.Profiles[name]
 	if !builtin && !inFile {
-		return Profile{}, fmt.Errorf("unknown profile %q (built-in: prod, staging; create one with po login --profile %s --origin URL)", name, name)
+		return Profile{}, fmt.Errorf("unknown profile %q (built-in: prod, staging; create one with %s login --profile %s --origin URL)", name, apierr.Bin, name)
 	}
 	if over.Origin != "" {
 		p.Origin = over.Origin

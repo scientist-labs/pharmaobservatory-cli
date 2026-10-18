@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/scientist-labs/pharmaobservatory-cli/internal/api"
+	"github.com/scientist-labs/pharmaobservatory-cli/internal/apierr"
 	"github.com/scientist-labs/pharmaobservatory-cli/internal/auth/store"
 	"github.com/scientist-labs/pharmaobservatory-cli/internal/config"
 )
@@ -23,11 +24,14 @@ type Deps struct {
 	Now          func() time.Time
 	CallbackWait time.Duration
 	DefaultPort  int
+	// Sleep and Stderr are the --wait seams: nil means a real sleep and os.Stderr.
+	Sleep  func(ctx context.Context, d time.Duration) error
+	Stderr io.Writer
 }
 
 func defaultDeps() Deps {
 	return Deps{
-		HC:           &http.Client{Timeout: 30 * time.Second},
+		HC:           &http.Client{Timeout: 30 * time.Second, CheckRedirect: apierr.SecureRedirect},
 		Keyring:      store.SystemKeyring(),
 		OpenBrowser:  openBrowser,
 		Stdin:        os.Stdin,
@@ -60,6 +64,7 @@ type globals struct {
 	json     bool
 	csv      bool
 	all      bool
+	wait     bool
 	quiet    bool
 	noFooter bool
 }
@@ -77,7 +82,21 @@ func (g *globals) resolve() (config.Profile, config.File, error) {
 	if g.apiBase != "" {
 		p.APIBase = g.apiBase
 	}
+	if err := checkSecure(p); err != nil {
+		return p, f, err
+	}
 	return p, f, nil
+}
+
+// checkSecure refuses a profile whose origin or request base is not https (loopback excepted).
+func checkSecure(p config.Profile) error {
+	if err := apierr.RequireSecure("origin", p.Origin); err != nil {
+		return err
+	}
+	if p.APIBase != "" {
+		return apierr.RequireSecure("api base", p.APIBase)
+	}
+	return nil
 }
 
 func (g *globals) session(d Deps) (*api.Session, error) {
@@ -89,7 +108,11 @@ func (g *globals) session(d Deps) (*api.Session, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &api.Session{Profile: p, Store: st, HC: d.HC, Now: d.Now}, nil
+	notice := d.Stderr
+	if notice == nil {
+		notice = os.Stderr
+	}
+	return &api.Session{Profile: p, Store: st, HC: d.HC, Now: d.Now, Wait: g.wait, Sleep: d.Sleep, Notice: notice}, nil
 }
 
 func ctxOf(cmdCtx context.Context) context.Context {

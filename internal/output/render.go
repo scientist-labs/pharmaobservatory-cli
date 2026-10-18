@@ -4,6 +4,7 @@ import (
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
+	"github.com/scientist-labs/pharmaobservatory-cli/internal/sanitize"
 	"io"
 	"strings"
 	"unicode/utf8"
@@ -91,7 +92,7 @@ func WriteCSV(w io.Writer, header []string, rows [][]string) error {
 func cleanCSV(cells []string) []string {
 	out := make([]string, len(cells))
 	for i, c := range cells {
-		out[i] = CSVCell(c)
+		out[i] = sanitize.CSVCell(c)
 	}
 	return out
 }
@@ -102,7 +103,7 @@ func WriteTable(w io.Writer, g Grid, width int) error {
 	clean := func(cells []string) []string {
 		out := make([]string, len(cells))
 		for i, c := range cells {
-			out[i] = Line(c)
+			out[i] = sanitize.Line(c)
 		}
 		return out
 	}

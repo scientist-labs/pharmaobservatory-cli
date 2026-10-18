@@ -8,13 +8,14 @@ pushes a tag.
 
 `BINARY_NAME` in the `env:` block at the top of `.goreleaser.yml`. The archives, the build output
 (`po.exe` on Windows), the deb and rpm `/usr/bin` entry, the brew install and test lines, and, through
-the `binaryName` ldflag, the root command's `Use`, the `version` output and the User-Agent all read it.
+the `apierr.Bin` ldflag, the root command's `Use`, the `version` output, help and remedy text and the
+User-Agent all read it.
 Verified: setting it to another value and running `goreleaser release --snapshot` yields archives,
 packages, a formula and a `version` line under the new name.
 
 A rename is one line for packaging. These are NOT derived and are a separate edit if the name changes:
-the module path and `cmd/po` directory, the `PO_*` environment variables, the config directory name,
-and the `po login` remedy text in `internal/apierr` and `internal/auth`. The package, formula and apt
+the module path and `cmd/po` directory, the `PO_*` environment variables, the config directory name
+(`po`, in `internal/config`) and the keychain service name (`po`, in `internal/auth/store`). The package, formula and apt
 and yum repository name is `pharmaobservatory` (the project name) and stays whatever the binary is called.
 
 ## Install instructions (draft for the README, ticket #10)
@@ -83,3 +84,9 @@ Rotation, before the expiry or on suspected compromise:
 5. Tag and push: `git tag v0.1.0 && git push origin v0.1.0` (the first release needs a tagged SDK, see issue #1).
 6. Watch the `Release` run: `release` then `packages`. Then check the install lines above on a clean machine.
 7. Unset `RELEASE_ENABLED` again if releases should stay manual (regenerate.yml tags a patch release unattended while it is set).
+
+## SSH host keys
+
+`packaging/github_known_hosts` pins GitHub's SSH host keys (source and update steps are in the file's
+header). The release workflow installs it and both pushes (the tap through GoReleaser's `ssh_command`,
+the packages repository through `GIT_SSH_COMMAND`) use `StrictHostKeyChecking=yes`.

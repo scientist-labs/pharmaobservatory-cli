@@ -106,7 +106,7 @@ func pageCmd(e *Env, s *PageSpec) *cobra.Command {
 	var long strings.Builder
 	fmt.Fprintf(&long, "Query the %s page of the API.\n", s.Slug)
 	if len(s.IDSections) > 0 {
-		long.WriteString("\nSections of a record (po " + s.Slug + " get <id> <section>):\n")
+		long.WriteString("\nSections of a record (" + apierr.Bin + " " + s.Slug + " get <id> <section>):\n")
 		for _, o := range sortedOps(s.IDSections) {
 			fmt.Fprintf(&long, "  %-34s %s\n", o.Key, o.Short)
 		}
@@ -174,10 +174,10 @@ func getCmd(e *Env, s *PageSpec) *cobra.Command {
 	var long strings.Builder
 	long.WriteString("Get one record, or one section of it.\n\nThe id is passed through verbatim and URL-encoded once. Put the id and the section before any flags.")
 	if s.Get != nil {
-		long.WriteString("\n\n  po " + s.Slug + " get <id>\n      " + s.Get.Short + "\n      GET " + s.Get.Path)
+		long.WriteString("\n\n  " + apierr.Bin + " " + s.Slug + " get <id>\n      " + s.Get.Short + "\n      GET " + s.Get.Path)
 	}
 	if len(s.IDSections) > 0 {
-		long.WriteString("\n\nSections (po " + s.Slug + " get <id> <section> --help shows a section's flags):\n")
+		long.WriteString("\n\nSections (" + apierr.Bin + " " + s.Slug + " get <id> <section> --help shows a section's flags):\n")
 		for _, o := range sortedOps(s.IDSections) {
 			fmt.Fprintf(&long, "  %-34s %s\n", o.Key, o.Short)
 		}
@@ -198,7 +198,7 @@ func getCmd(e *Env, s *PageSpec) *cobra.Command {
 		case len(pos) == 0 && *help:
 			return cmd.Help()
 		case len(pos) == 0:
-			return apierr.Usage(fmt.Errorf("get needs an id: po %s get <id> [section]", s.Slug))
+			return apierr.Usage(fmt.Errorf("get needs an id: %s %s get <id> [section]", apierr.Bin, s.Slug))
 		case len(pos) == 1:
 			op = s.Get
 			if op == nil {
@@ -214,7 +214,7 @@ func getCmd(e *Env, s *PageSpec) *cobra.Command {
 				return apierr.Usage(fmt.Errorf("unknown section %q for %s; valid sections: %s", pos[1], s.Slug, keys(s.IDSections)))
 			}
 		default:
-			return apierr.Usage(fmt.Errorf("too many arguments: po %s get <id> [section]", s.Slug))
+			return apierr.Usage(fmt.Errorf("too many arguments: %s %s get <id> [section]", apierr.Bin, s.Slug))
 		}
 		strict := pflag.NewFlagSet("get", pflag.ContinueOnError)
 		strict.SetOutput(io.Discard)
@@ -225,7 +225,7 @@ func getCmd(e *Env, s *PageSpec) *cobra.Command {
 			return apierr.Usage(err)
 		}
 		if h, _ := strict.GetBool("help"); h {
-			_, err := fmt.Fprintf(cmd.OutOrStdout(), "%s\n\nUsage:\n  po %s get <id> %s [flags]\n\nFlags:\n%s", op.Short+"\nGET "+op.Path, s.Slug, op.Key, op.Flags.FlagUsages())
+			_, err := fmt.Fprintf(cmd.OutOrStdout(), "%s\n\nUsage:\n  %s %s get <id> %s [flags]\n\nFlags:\n%s", op.Short+"\nGET "+op.Path, apierr.Bin, s.Slug, op.Key, op.Flags.FlagUsages())
 			return err
 		}
 		return e.run(cmd, op, pos[0], op.Flags)
@@ -302,10 +302,10 @@ func (w *walker) fetch() ([]byte, error) {
 	defer func() { _ = resp.Body.Close() }()
 	body, rerr := io.ReadAll(io.LimitReader(resp.Body, 64<<20))
 	if rerr != nil {
-		return nil, rerr
+		return nil, apierr.Unavailable("reading the response failed: %v", rerr)
 	}
 	if resp.StatusCode != http.StatusOK {
-		err := apierr.FromResponse(resp.StatusCode, body, w.cl.Profile)
+		err := apierr.FromResponse(resp.StatusCode, resp.Header, body, w.cl.Profile)
 		if resp.StatusCode == http.StatusConflict {
 			var b struct {
 				Error string `json:"error"`

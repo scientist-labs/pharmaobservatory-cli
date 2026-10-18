@@ -200,3 +200,17 @@ func Open(kr Keyring, profile string) (Store, error) {
 	}
 	return file, nil
 }
+
+// All returns every store that may hold the profile's credential: the keychain (unless the file
+// is forced or there is no keychain) and the file. Logout clears each of them.
+func All(kr Keyring, profile string) ([]Store, error) {
+	dir, err := config.Dir()
+	if err != nil {
+		return nil, err
+	}
+	file := FileStore{Dir: dir}
+	if os.Getenv("PO_CREDENTIAL_STORE") == "file" || kr == nil {
+		return []Store{file}, nil
+	}
+	return []Store{KeychainStore{KR: kr}, file}, nil
+}

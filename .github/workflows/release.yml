@@ -57,6 +57,12 @@ jobs:
         with:
           go-version: stable
       - uses: sigstore/cosign-installer@v4
+      # Pinned GitHub host keys (packaging/github_known_hosts): no trust on first use for the tap push
+      # (GoReleaser's ssh_command reads this path) or the packages push below.
+      - name: Pin the GitHub SSH host keys
+        run: |
+          install -m 700 -d ~/.ssh
+          install -m 644 packaging/github_known_hosts ~/.ssh/pharmaobservatory_known_hosts
       - uses: goreleaser/goreleaser-action@v6
         with:
           distribution: goreleaser
@@ -102,9 +108,10 @@ jobs:
           DEPLOY_KEY: ${{ secrets.PACKAGES_DEPLOY_KEY }}
         run: |
           install -m 700 -d ~/.ssh
+          install -m 644 packaging/github_known_hosts ~/.ssh/pharmaobservatory_known_hosts
           printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/packages_deploy_key
           chmod 600 ~/.ssh/packages_deploy_key
-          export GIT_SSH_COMMAND="ssh -i $HOME/.ssh/packages_deploy_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new"
+          export GIT_SSH_COMMAND="ssh -i $HOME/.ssh/packages_deploy_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$HOME/.ssh/pharmaobservatory_known_hosts"
           echo "GIT_SSH_COMMAND=$GIT_SSH_COMMAND" >> "$GITHUB_ENV"
           url=git@github.com:scientist-labs/pharmaobservatory-packages.git
           if git ls-remote --exit-code --heads "$url" main >/dev/null 2>&1; then
