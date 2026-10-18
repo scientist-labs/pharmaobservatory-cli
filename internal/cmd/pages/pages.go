@@ -265,6 +265,10 @@ func (e *Env) run(cmd *cobra.Command, o *Op, id string, fs *pflag.FlagSet) error
 	return w.render()
 }
 
+// MaxPages is the ceiling on pages one --all walk fetches. A walk that reaches it stops, marks
+// the output partial and exits 9. It is a variable so the tests can lower it.
+var MaxPages = 1000
+
 type walker struct {
 	e   *Env
 	cmd *cobra.Command
@@ -368,13 +372,22 @@ func (w *walker) render() error {
 		rows        [][]string
 		restarted   bool
 		partial     string
+		pages       int
+		seen        = map[string]bool{}
 	)
+	if origCursor != "" {
+		seen[origCursor] = true
+	}
 	for {
 		body, err := w.fetch()
 		var gc *generationChanged
 		if errors.As(err, &gc) && w.set.All {
 			if !restarted {
 				restarted, first, last, rows = true, nil, nil, nil
+				pages, seen = 0, map[string]bool{}
+				if origCursor != "" {
+					seen[origCursor] = true
+				}
 				w.restoreCursor(origCursor, origChanged)
 				continue
 			}
@@ -414,6 +427,7 @@ func (w *walker) render() error {
 			}
 		}
 		last = env
+		pages++
 		rows = append(rows, output.Rows(env)...)
 		next := ""
 		if env.Pagination != nil && env.Pagination.NextCursor != nil {
@@ -426,6 +440,15 @@ func (w *walker) render() error {
 			partial = "this operation takes no --cursor, so the next page cannot be requested"
 			break
 		}
+		if seen[next] {
+			partial = "the server returned a cursor that was already fetched (" + next + "), so the walk would never end"
+			break
+		}
+		if pages >= MaxPages {
+			partial = fmt.Sprintf("reached the %d page limit with more pages remaining", MaxPages)
+			break
+		}
+		seen[next] = true
 		w.setCursor(next)
 	}
 	if err := w.write(first, rows); err != nil {
@@ -445,8 +468,23 @@ func (w *walker) render() error {
 func (w *walker) write(first *output.Envelope, rows [][]string) error {
 	out := w.cmd.OutOrStdout()
 	width := 0
-	if !w.set.CSV && w.e.Width != nil {
+	if w.e.Width != nil {
 		width = w.e.Width(out)
+	}
+	if err := w.renderBody(first, rows, out, width); err != nil {
+		return err
+	}
+	// The source credit travels with the saved file: CSV always, a table whenever stdout is not
+	// a terminal. A terminal table already shows the credit on stderr. Never suppressible.
+	if w.set.CSV || width == 0 {
+		output.WriteCredits(out, first)
+	}
+	return nil
+}
+
+func (w *walker) renderBody(first *output.Envelope, rows [][]string, out io.Writer, width int) error {
+	if w.set.CSV {
+		width = 0
 	}
 	emit := func(g output.Grid) error {
 		if w.set.CSV {

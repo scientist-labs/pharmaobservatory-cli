@@ -38,10 +38,18 @@ func AttributionLines(e *Envelope) []string {
 	return out
 }
 
+// WriteCredits writes the attribution as `# Source: <credit>` lines, for the end of a CSV file or
+// a piped table. Plain credit only, never a tier word.
+func WriteCredits(w io.Writer, e *Envelope) {
+	for _, l := range AttributionLines(e) {
+		_, _ = fmt.Fprintln(w, "# Source: "+l)
+	}
+}
+
 // WriteFooter prints the footer to w (stderr in every mode).
 func WriteFooter(w io.Writer, e *Envelope, o FooterOpts) {
 	for _, l := range AttributionLines(e) {
-		fmt.Fprintln(w, l)
+		_, _ = fmt.Fprintln(w, l)
 	}
 	if o.Quiet {
 		return
@@ -55,16 +63,16 @@ func WriteFooter(w io.Writer, e *Envelope, o FooterOpts) {
 		if o.Profile != "" {
 			line += " (profile " + o.Profile + ")"
 		}
-		fmt.Fprintln(w, line)
+		_, _ = fmt.Fprintln(w, line)
 	}
 	if r := e.Resolution; r != nil {
-		fmt.Fprintf(w, "resolved: %s (%s)\n", r.MatchTier, r.Verdict)
+		_, _ = fmt.Fprintf(w, "resolved: %s (%s)\n", r.MatchTier, r.Verdict)
 	}
 	if e.WebURL != "" {
-		fmt.Fprintln(w, e.WebURL)
+		_, _ = fmt.Fprintln(w, e.WebURL)
 	}
 	if e.Pagination != nil {
-		fmt.Fprintln(w, pagingLine(e.Pagination, o))
+		_, _ = fmt.Fprintln(w, pagingLine(e.Pagination, o))
 	}
 }
 

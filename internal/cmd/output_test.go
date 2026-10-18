@@ -2,12 +2,14 @@ package cmd
 
 import (
 	"bytes"
+	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
 	"testing"
 
 	"github.com/scientist-labs/pharmaobservatory-cli/internal/apierr"
+	"github.com/scientist-labs/pharmaobservatory-cli/internal/cmd/pages"
 )
 
 func page1(cursorNext, total, basis string) string {
@@ -64,7 +66,7 @@ func TestTableFromColumnsIsTabSeparatedWithLabelsAndFooterOnStderr(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "Symbol\tNote\tCount\nEGFR\thas, comma\t3\nKRAS\tsay \"hi\"\t\n"
+	want := "Symbol\tNote\tCount\nEGFR\thas, comma\t3\nKRAS\tsay \"hi\"\t\n# Source: HGNC (CC0) https://example.test/hgnc\n# Source: Open Targets https://example.test/ot\n"
 	if out != want {
 		t.Fatalf("stdout %q want %q", out, want)
 	}
@@ -80,7 +82,7 @@ func TestTableFromColumnsIsTabSeparatedWithLabelsAndFooterOnStderr(t *testing.T)
 			t.Errorf("footer missing %q in %q", s, errOut)
 		}
 	}
-	if strings.Contains(out, "HGNC") {
+	if strings.Contains(strings.ReplaceAll(out, "# Source: ", ""), "as of") || strings.Contains(out, "showing") {
 		t.Fatal("footer leaked to stdout")
 	}
 }
@@ -92,7 +94,7 @@ func TestCSVIsKeysThenRowsQuotedPerRFC4180(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "symbol,note,n\nEGFR,\"has, comma\",3\nKRAS,\"say \"\"hi\"\"\",\n"
+	want := "symbol,note,n\nEGFR,\"has, comma\",3\nKRAS,\"say \"\"hi\"\"\",\n# Source: HGNC (CC0) https://example.test/hgnc\n# Source: Open Targets https://example.test/ot\n"
 	if out != want {
 		t.Fatalf("csv %q want %q", out, want)
 	}
@@ -133,6 +135,13 @@ func TestAttributionSurvivesEveryFlagCombination(t *testing.T) {
 		for _, line := range []string{"HGNC (CC0) https://example.test/hgnc", "Open Targets https://example.test/ot"} {
 			if !strings.Contains(errOut, line) {
 				t.Errorf("%v: attribution %q missing from stderr %q", flags, line, errOut)
+			}
+		}
+		// Redirected stdout (the test's is never a terminal) carries the credit in every table
+		// and CSV mode, whatever --quiet and --no-footer say.
+		for _, line := range []string{"# Source: HGNC (CC0) https://example.test/hgnc", "# Source: Open Targets https://example.test/ot"} {
+			if !strings.Contains(out, line) {
+				t.Errorf("%v: credit %q missing from stdout %q", flags, line, out)
 			}
 		}
 		if strings.Contains(out+errOut, "licensable") {
@@ -282,7 +291,7 @@ func TestUnbuiltIsNotAnEmptyTable(t *testing.T) {
 		if err.Error() != "not answered: serving.a, serving.b" {
 			t.Fatalf("message %q", err)
 		}
-		if flags != nil && len(flags) == 1 && flags[0] == "--json" {
+		if len(flags) == 1 && flags[0] == "--json" {
 			if !strings.Contains(out, "unbuilt_relations") {
 				t.Fatalf("json body not printed: %q", out)
 			}
@@ -351,7 +360,7 @@ func TestGetPrintsIdentityThenTheSectionsIndexIncludingUnavailable(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "field\tvalue\nSymbol\tEGFR\nAliases\t4\nEmpty\t\n\nsection\theading\tavailable\nrelations\tRelations\tyes\nassays\tAssays\tunavailable\n"
+	want := "field\tvalue\nSymbol\tEGFR\nAliases\t4\nEmpty\t\n\nsection\theading\tavailable\nrelations\tRelations\tyes\nassays\tAssays\tunavailable\n# Source: HGNC (CC0) https://example.test/hgnc\n"
 	if out != want {
 		t.Fatalf("%q want %q", out, want)
 	}
@@ -362,7 +371,7 @@ func TestGetPrintsIdentityThenTheSectionsIndexIncludingUnavailable(t *testing.T)
 		}
 	}
 	csvOut, _, err := e.split("biomarkers", "get", "EGFR", "--csv")
-	if err != nil || csvOut != "key,value\nsymbol,EGFR\nn,4\nx,\n" {
+	if err != nil || csvOut != "key,value\nsymbol,EGFR\nn,4\nx,\n# Source: HGNC (CC0) https://example.test/hgnc\n" {
 		t.Fatalf("%v %q", err, csvOut)
 	}
 }
@@ -402,5 +411,61 @@ func TestCursorAndLimitPassThrough(t *testing.T) {
 	u, _ := url.Parse("http://x" + e.lastSeen(t))
 	if u.Query().Get("cursor") != "abc" || u.Query().Get("limit") != "2" {
 		t.Fatalf("%s", e.lastSeen(t))
+	}
+}
+
+func TestCSVCreditsFollowTheRows(t *testing.T) {
+	e := loggedIn(t)
+	e.api = serve(page1("", "2", "exact"))
+	out, _, err := e.split("biomarkers", "list", "--csv", "--quiet", "--no-footer")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasSuffix(out, "\n# Source: HGNC (CC0) https://example.test/hgnc\n# Source: Open Targets https://example.test/ot\n") {
+		t.Fatalf("credits are not the trailing lines: %q", out)
+	}
+}
+
+func TestAllStopsWhenACursorRepeats(t *testing.T) {
+	e := loggedIn(t)
+	calls := 0
+	e.api = func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		serve(page1("c1", "99", "exact"))(w, r)
+	}
+	out, errOut, err := e.split("biomarkers", "list", "--all")
+	if apierr.ExitCode(err) != apierr.ExitPartial {
+		t.Fatalf("exit %d err %v", apierr.ExitCode(err), err)
+	}
+	if calls != 2 {
+		t.Fatalf("%d calls, want 2 (first page, then c1 once)", calls)
+	}
+	if !strings.Contains(errOut, "partial: fetched 4 rows") || !strings.Contains(errOut, "already fetched (c1)") {
+		t.Fatalf("stderr %q", errOut)
+	}
+	if !strings.Contains(out, "# Source: HGNC") {
+		t.Fatalf("stdout %q", out)
+	}
+}
+
+func TestAllStopsAtThePageCeiling(t *testing.T) {
+	old := pages.MaxPages
+	pages.MaxPages = 3
+	defer func() { pages.MaxPages = old }()
+	e := loggedIn(t)
+	calls := 0
+	e.api = func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		serve(page1(fmt.Sprintf("c%d", calls), "99", "exact"))(w, r)
+	}
+	_, errOut, err := e.split("biomarkers", "list", "--all")
+	if apierr.ExitCode(err) != apierr.ExitPartial {
+		t.Fatalf("exit %d err %v", apierr.ExitCode(err), err)
+	}
+	if calls != 3 {
+		t.Fatalf("%d calls, want 3", calls)
+	}
+	if !strings.Contains(errOut, "partial: fetched 6 rows") || !strings.Contains(errOut, "3 page limit") {
+		t.Fatalf("stderr %q", errOut)
 	}
 }
