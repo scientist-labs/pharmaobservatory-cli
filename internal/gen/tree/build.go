@@ -20,7 +20,7 @@ var typeMap = map[string]map[string][2]string{
 // of the same name becomes --param-<name>.
 var globalFlags = map[string]bool{
 	"profile": true, "api-base": true, "json": true, "csv": true, "all": true,
-	"verbose": true, "quiet": true, "no-footer": true, "no-wait": true, "help": true,
+	"verbose": true, "quiet": true, "no-footer": true, "no-wait": true, "wait": true, "help": true,
 }
 
 // PageReserved are the names under a page group that a collection section cannot take. Such a
@@ -31,7 +31,7 @@ var PageReserved = map[string]bool{"list": true, "get": true, "help": true, "com
 // registered only as `po page <slug>`.
 var TopReserved = map[string]bool{
 	"login": true, "logout": true, "whoami": true, "version": true, "config": true, "auth": true,
-	"api": true, "help": true, "completion": true, "get": true, "list": true, "page": true,
+	"api": true, "exit-codes": true, "help": true, "completion": true, "get": true, "list": true, "page": true,
 }
 
 var kindOrder = map[string]int{KindList: 0, KindGet: 1, KindIDSection: 2, KindSection: 3}

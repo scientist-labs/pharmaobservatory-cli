@@ -40,11 +40,11 @@ func TestRequireSecure(t *testing.T) {
 }
 
 func TestFromResponseSanitizesServerText(t *testing.T) {
-	err := FromResponse(418, []byte("\x1b[2Jteapot"), "p")
+	err := FromResponse(418, nil, []byte("\x1b[2Jteapot"), "p")
 	if strings.Contains(err.Error(), "\x1b") {
 		t.Fatalf("%q", err)
 	}
-	err = FromResponse(403, []byte(`{"error":"missing_role","role":"a\u001b[0mb"}`), "p")
+	err = FromResponse(403, nil, []byte(`{"error":"missing_role","role":"a\u001b[0mb"}`), "p")
 	if strings.Contains(err.Error(), "\x1b") || !strings.Contains(err.Error(), "a[0mb") {
 		t.Fatalf("%q", err)
 	}

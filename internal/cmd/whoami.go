@@ -16,7 +16,7 @@ func newWhoamiCmd(g *globals, d Deps) *cobra.Command {
 	return &cobra.Command{
 		Use:   "whoami",
 		Short: "Show who the stored login is, as the API sees it",
-		Args:  cobra.NoArgs,
+		Args:  noArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			s, err := g.session(d)
 			if err != nil {
@@ -53,7 +53,7 @@ func newLogoutCmd(g *globals, d Deps) *cobra.Command {
 		Use:   "logout",
 		Short: "Remove the stored credential for the profile",
 		Long:  "Removes the stored credential locally. The refresh token is not revoked server-side.",
-		Args:  cobra.NoArgs,
+		Args:  noArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			p, _, err := g.resolve()
 			if err != nil {
@@ -103,7 +103,7 @@ func newAuthCmd(g *globals, d Deps) *cobra.Command {
 	auth.AddCommand(&cobra.Command{
 		Use:   "refresh",
 		Short: "Force a refresh now and verify the audience",
-		Args:  cobra.NoArgs,
+		Args:  noArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			s, err := g.session(d)
 			if err != nil {
