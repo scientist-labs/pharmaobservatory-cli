@@ -7,16 +7,19 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 )
 
 // Exit classes, per the design note's exit table.
 const (
-	ExitOK         = 0
-	ExitUnexpected = 1
-	ExitUsage      = 2
-	ExitAuth       = 3
-	ExitForbidden  = 4
-	ExitUnavail    = 7
+	ExitOK          = 0
+	ExitUnexpected  = 1
+	ExitUsage       = 2
+	ExitAuth        = 3
+	ExitForbidden   = 4
+	ExitUnavail     = 7
+	ExitNotAnswered = 8
+	ExitPartial     = 9
 )
 
 // ClassError carries an explicit exit class and a message that names the remedy.
@@ -72,8 +75,10 @@ func ExitCode(err error) int {
 // word is class 1 with the raw body, never silently ok.
 func FromResponse(status int, body []byte, profile string) error {
 	var b struct {
-		Error string `json:"error"`
-		Role  string `json:"role"`
+		Error       string `json:"error"`
+		Role        string `json:"role"`
+		License     string `json:"license"`
+		Attribution any    `json:"attribution"`
 	}
 	_ = json.Unmarshal(body, &b)
 	login := "run: po login --profile " + profile
@@ -93,6 +98,10 @@ func FromResponse(status int, body []byte, profile string) error {
 		return Forbidden("this account has no entitlement yet (access_pending); request access at the Pharma Observatory site")
 	case status == 503 && b.Error == "no_identity_provider":
 		return Unavailable("the server has no identity provider configured (no_identity_provider); try again later")
+	case status == 403 && b.Error == "not_entitled":
+		return Forbidden("not entitled to this section (not_entitled)%s", creditSuffix(b.License, b.Attribution))
+	case status == 409 && b.Error == "generation_changed":
+		return Unavailable("the warehouse was rebuilt since this cursor was issued (generation_changed); restart from the first page")
 	case status >= 500:
 		return Unavailable("the server answered HTTP %d", status)
 	}
@@ -101,4 +110,31 @@ func FromResponse(status int, body []byte, profile string) error {
 		raw = raw[:300]
 	}
 	return fmt.Errorf("unexpected response: HTTP %d %s", status, raw)
+}
+
+// creditSuffix renders a refusal's license and attribution. The credit is shown; the restriction
+// tier the body also carries is an internal label and is deliberately not printed.
+func creditSuffix(license string, attribution any) string {
+	var parts []string
+	if license != "" {
+		parts = append(parts, "license: "+license)
+	}
+	switch a := attribution.(type) {
+	case string:
+		if a != "" {
+			parts = append(parts, "attribution: "+a)
+		}
+	case []any:
+		for _, e := range a {
+			if m, ok := e.(map[string]any); ok {
+				name, _ := m["name"].(string)
+				href, _ := m["href"].(string)
+				parts = append(parts, "attribution: "+strings.TrimSpace(name+" "+href))
+			}
+		}
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return "; " + strings.Join(parts, "; ")
 }
