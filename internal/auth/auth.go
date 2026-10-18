@@ -45,6 +45,9 @@ func getJSON(ctx context.Context, hc *http.Client, u string, out any) error {
 	req.Header.Set("Accept", "application/json")
 	resp, err := hc.Do(req)
 	if err != nil {
+		if u := apierr.UsageCause(err); u != nil {
+			return u
+		}
 		return apierr.Unavailable("cannot reach %s: %v", u, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
@@ -279,6 +282,9 @@ func postToken(ctx context.Context, hc *http.Client, endpoint string, form url.V
 	req.Header.Set("Accept", "application/json")
 	resp, err := hc.Do(req)
 	if err != nil {
+		if u := apierr.UsageCause(err); u != nil {
+			return tr, u
+		}
 		return tr, apierr.Unavailable("cannot reach the token endpoint: %v", err)
 	}
 	defer func() { _ = resp.Body.Close() }()

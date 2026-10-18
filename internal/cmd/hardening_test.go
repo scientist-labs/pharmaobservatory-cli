@@ -203,3 +203,48 @@ func TestAPIPathTricksKeepTheProfileHost(t *testing.T) {
 		}
 	}
 }
+
+func TestLogoutFileStoreLeavesTheKeychainAlone(t *testing.T) {
+	e := newEnv(t)
+	e.stdin = "c\n"
+	if out, err := e.login("--no-browser"); err != nil {
+		t.Fatalf("%v %s", err, out)
+	}
+	cred := e.stored()
+	fs := store.FileStore{Dir: os.Getenv("PO_CONFIG_DIR")}
+	if err := fs.Set("local", cred); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PO_CREDENTIAL_STORE", "file")
+	if out, err := e.run("logout", "--profile", "local"); err != nil {
+		t.Fatalf("%v %s", err, out)
+	}
+	if _, err := fs.Get("local"); err != store.ErrNotFound {
+		t.Fatalf("file entry remains: %v", err)
+	}
+	if _, err := (store.KeychainStore{KR: e.kr}).Get("local"); err != nil {
+		t.Fatalf("file-mode logout touched the keychain: %v", err)
+	}
+}
+
+func TestLogoutLeavesAnotherProfileAlone(t *testing.T) {
+	e := newEnv(t)
+	e.stdin = "c\n"
+	if out, err := e.login("--no-browser"); err != nil {
+		t.Fatalf("%v %s", err, out)
+	}
+	cred := e.stored()
+	kc := store.KeychainStore{KR: e.kr}
+	if err := kc.Set("other", cred); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := e.run("logout", "--profile", "local"); err != nil {
+		t.Fatalf("%v %s", err, out)
+	}
+	if _, err := kc.Get("local"); err != store.ErrNotFound {
+		t.Fatalf("local remains: %v", err)
+	}
+	if _, err := kc.Get("other"); err != nil {
+		t.Fatalf("logout removed another profile's keychain entry: %v", err)
+	}
+}

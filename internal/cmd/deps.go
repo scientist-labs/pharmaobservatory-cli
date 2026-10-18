@@ -28,7 +28,7 @@ type Deps struct {
 
 func defaultDeps() Deps {
 	return Deps{
-		HC:           &http.Client{Timeout: 30 * time.Second},
+		HC:           &http.Client{Timeout: 30 * time.Second, CheckRedirect: apierr.SecureRedirect},
 		Keyring:      store.SystemKeyring(),
 		OpenBrowser:  openBrowser,
 		Stdin:        os.Stdin,

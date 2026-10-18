@@ -96,6 +96,9 @@ func (s *Session) do(ctx context.Context, path, token string) (int, []byte, erro
 	req.Header.Set("Accept", "application/json")
 	resp, err := s.HC.Do(req)
 	if err != nil {
+		if u := apierr.UsageCause(err); u != nil {
+			return 0, nil, u
+		}
 		return 0, nil, apierr.Unavailable("cannot reach %s: %v", s.Profile.Base(), err)
 	}
 	defer func() { _ = resp.Body.Close() }()
