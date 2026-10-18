@@ -10,6 +10,7 @@ import (
 	"github.com/scientist-labs/pharmaobservatory-cli/internal/auth"
 	"github.com/scientist-labs/pharmaobservatory-cli/internal/auth/store"
 	"github.com/scientist-labs/pharmaobservatory-cli/internal/config"
+	"github.com/scientist-labs/pharmaobservatory-cli/internal/sanitize"
 )
 
 func newLoginCmd(g *globals, d Deps) *cobra.Command {
@@ -108,7 +109,7 @@ func newLoginCmd(g *globals, d Deps) *cobra.Command {
 					return err
 				}
 			}
-			_, _ = fmt.Fprintf(out, "Logged in to %s (%s) as %s. Credential stored in the %s.\n", p.Name, p.Origin, cred.Sub, st.Name())
+			_, _ = fmt.Fprintf(out, "Logged in to %s (%s) as %s. Credential stored in the %s.\n", p.Name, p.Origin, sanitize.Line(cred.Sub), st.Name())
 			return nil
 		},
 	}

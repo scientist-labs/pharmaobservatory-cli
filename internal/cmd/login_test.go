@@ -75,6 +75,7 @@ type env struct {
 	whoami  func(w http.ResponseWriter, r *http.Request)
 	whoamis int
 	tokenN  int
+	sub     string   // when set, minted tokens carry this subject
 	aud     string   // when set, minted tokens carry this audience
 	refuse  bool     // when set, the token endpoint answers 400 invalid_grant
 	authz   []string // Authorization headers seen by whoami
@@ -113,8 +114,12 @@ func newEnv(t *testing.T) *env {
 		if e.aud != "" {
 			aud = e.aud
 		}
+		sub := "user_1"
+		if e.sub != "" {
+			sub = e.sub
+		}
 		_ = json.NewEncoder(w).Encode(map[string]any{
-			"access_token": jwtFor(aud, "user_1", e.tokenN), "refresh_token": "rt" + string(rune('0'+e.tokenN)), "expires_in": 300,
+			"access_token": jwtFor(aud, sub, e.tokenN), "refresh_token": "rt" + string(rune('0'+e.tokenN)), "expires_in": 300,
 		})
 	})
 	mux.HandleFunc("/api/v1/whoami", func(w http.ResponseWriter, r *http.Request) {
@@ -686,5 +691,27 @@ func TestRefreshRejectedAsksForLogin(t *testing.T) {
 	_, err := e.run("whoami", "--profile", "local")
 	if apierr.ExitCode(err) != apierr.ExitAuth || !strings.Contains(err.Error(), "po login --profile local") || e.whoamis != 0 {
 		t.Fatalf("%v whoamis=%d", err, e.whoamis)
+	}
+}
+
+func TestLoginPrintsTheSubjectAsOneSanitizedLine(t *testing.T) {
+	e := newEnv(t)
+	e.sub = "evil\x1b[31m\nforged line"
+	e.stdin = "the-code\n"
+	out, err := e.login("--no-browser")
+	if err != nil {
+		t.Fatalf("%v\n%s", err, out)
+	}
+	if strings.Contains(out, "\x1b") {
+		t.Fatalf("ESC byte in output: %q", out)
+	}
+	var logged string
+	for _, l := range strings.Split(out, "\n") {
+		if strings.Contains(l, "Logged in to") {
+			logged = l
+		}
+	}
+	if !strings.Contains(logged, "as evil") || !strings.Contains(logged, "Credential stored") {
+		t.Fatalf("the Logged in message is not one line: %q", out)
 	}
 }
