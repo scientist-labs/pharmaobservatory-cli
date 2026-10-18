@@ -71,7 +71,7 @@ func TestLoginPrintsSanitizedCallbackError(t *testing.T) {
 	e := newEnv(t)
 	e.stdin = "http://127.0.0.1:53682/callback?error=access_denied&error_description=nope%1B%5B2J%07%0Aline2\n"
 	_, err := e.login("--no-browser")
-	if apierr.ExitCode(err) != apierr.ExitAuth || strings.ContainsAny(err.Error(), "\x1b\x07\n") || !strings.Contains(err.Error(), "nope[2Jline2") {
+	if apierr.ExitCode(err) != apierr.ExitAuth || strings.ContainsAny(err.Error(), "\x1b\x07\n") || !strings.Contains(err.Error(), "nope line2") {
 		t.Fatalf("%q", err)
 	}
 }
@@ -91,7 +91,7 @@ func TestTokenErrorDescriptionPrintedSanitized(t *testing.T) {
 	// Point discovery's token endpoint at the failing handler by wrapping the transport.
 	hc := &http.Client{Transport: rewrite{to: srv.URL, from: e.srv.URL + "/token"}}
 	_, err := runWith(e, hc, "whoami", "--profile", "local")
-	if err == nil || strings.ContainsAny(err.Error(), "\x1b\x07") || !strings.Contains(err.Error(), "revoked[31m!") {
+	if err == nil || strings.ContainsAny(err.Error(), "\x1b\x07") || !strings.Contains(err.Error(), "revoked!") {
 		t.Fatalf("%q", err)
 	}
 }

@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"github.com/scientist-labs/pharmaobservatory-cli/internal/sanitize"
 	"strings"
 
 	"github.com/scientist-labs/pharmaobservatory-cli/internal/apierr"
@@ -109,15 +110,15 @@ func (e *Envelope) State() error {
 	case "":
 		return nil
 	case "unbuilt":
-		return &apierr.ClassError{Class: apierr.ExitNotAnswered, Msg: "not answered: " + Line(strings.Join(e.Unbuilt, ", "))}
+		return &apierr.ClassError{Class: apierr.ExitNotAnswered, Msg: "not answered: " + sanitize.Line(strings.Join(e.Unbuilt, ", "))}
 	case "not_applicable":
-		msg := Line(e.Message)
+		msg := sanitize.Line(e.Message)
 		if msg == "" {
 			msg = "this section does not apply to this record"
 		}
 		return &apierr.ClassError{Class: apierr.ExitNotAnswered, Msg: "not applicable: " + msg}
 	}
-	return fmt.Errorf("unexpected answer %q: %s", Line(e.Error), Line(e.Message))
+	return fmt.Errorf("unexpected answer %q: %s", sanitize.Line(e.Error), sanitize.Line(e.Message))
 }
 
 // IsTable reports whether the body has a table to draw.

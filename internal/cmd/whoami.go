@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/scientist-labs/pharmaobservatory-cli/internal/sanitize"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -42,7 +43,7 @@ func newWhoamiCmd(g *globals, d Deps) *cobra.Command {
 				return fmt.Errorf("whoami: unreadable response: %w", err)
 			}
 			_, _ = fmt.Fprintf(out, "profile: %s\norigin:  %s\nsub:     %s\nroles:   %s\n",
-				s.Profile.Name, s.Profile.Origin, apierr.Sanitize(w.Sub), apierr.Sanitize(strings.Join(w.Roles, ", ")))
+				s.Profile.Name, s.Profile.Origin, sanitize.Line(w.Sub), sanitize.Line(strings.Join(w.Roles, ", ")))
 			return nil
 		},
 	}
