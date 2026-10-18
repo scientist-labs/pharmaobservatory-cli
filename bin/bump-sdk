@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+# Bump the exact SDK pin in go.mod to the newest go/v* tag, regenerate the command tree and write
+# the operationIds the bump added and removed. Writes nothing but go.mod, go.sum and the generated
+# tree. Usage: bin/bump-sdk [SUMMARY_FILE]   (default: stdout)
+# Exit 0 either way; with $GITHUB_OUTPUT set, appends changed=true|false, from=, to=.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+mod=github.com/scientist-labs/pharmaobservatory-sdks/go
+repo=https://github.com/scientist-labs/pharmaobservatory-sdks
+summary=${1:-/dev/stdout}
+
+out() { [ -z "${GITHUB_OUTPUT:-}" ] || echo "$1" >> "$GITHUB_OUTPUT"; }
+
+from=$(go list -m -f '{{.Version}}' "$mod")
+# Stable semver tags only (no prerelease), highest by version sort. ls-remote reads the tags
+# themselves, so a module proxy that has not seen the newest tag yet cannot hide it.
+to=$(git ls-remote --tags --refs "$repo" 'go/v*' | sed 's|.*refs/tags/go/||' \
+  | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n 1)
+if [ -z "$to" ]; then echo "no go/v* tag found at $repo" >&2; exit 1; fi
+
+if [ "$(printf '%s\n%s\n' "$from" "$to" | sort -V | tail -n 1)" = "$from" ]; then
+  echo "SDK pin $from is current (newest tag $to)" >&2
+  out "changed=false"
+  exit 0
+fi
+
+# A version with no document or no operationIds is an empty set, not an error.
+ops() { { grep -hE '^ +operationId:' "$1/api/openapi.yaml" 2>/dev/null || true; } | sed -E 's/^ +operationId: *//' | sort -u; }
+old_dir=$(go mod download -json "$mod@$from" | sed -n 's/.*"Dir": *"\(.*\)",*/\1/p')
+go get "$mod@$to"
+go mod tidy
+new_dir=$(go list -m -f '{{.Dir}}' "$mod")
+go generate ./...
+
+{
+  echo "SDK pin bumped from \`$from\` to \`$to\` (module \`$mod\`)."
+  echo
+  echo "operationIds added:"
+  comm -13 <(ops "$old_dir") <(ops "$new_dir") | sed 's/^/- /'
+  echo
+  echo "operationIds removed:"
+  comm -23 <(ops "$old_dir") <(ops "$new_dir") | sed 's/^/- /'
+} > "$summary"
+out "changed=true"
+out "from=$from"
+out "to=$to"

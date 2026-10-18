@@ -1,0 +1,152 @@
+name: Regenerate
+
+# Keeps the po command tree current with the published API. The tree is generated at build time from
+# the Go SDK module pinned EXACTLY in go.mod (design note on issue #1), so regeneration means: find
+# the newest go/v* tag of github.com/scientist-labs/pharmaobservatory-sdks/go, bump the pin to it,
+# run `go generate ./...` and `go mod tidy` (bin/bump-sdk does all three), and open or update ONE
+# pull request on automation/regenerate. The SDK repo's own regenerate.yml is what turns a changed
+# live OpenAPI document into a new SDK tag, so this job never reads the live spec. Nothing is
+# written except go.mod, go.sum and the generated tree. The PR body lists the operationIds the
+# bump added and removed, diffed from the two SDK versions' embedded api/openapi.yaml.
+#
+# HOW THE PR'S CI BECOMES VISIBLE. A pull request opened with the default GITHUB_TOKEN does not
+# trigger pull_request workflows. Chosen (same as the SDK repo): the `ci` job calls ci.yml
+# (workflow_call) on the PR's head SHA and the `report` job posts the outcome on that SHA as the
+# commit status "ci / regenerated". Not chosen: a GitHub App token or PAT, which adds a long-lived
+# credential to create, scope and rotate. Cost: the check is a status rather than a workflow run,
+# and it is posted per regeneration run, not for a human's manual pushes to the branch.
+#
+# MERGE. When the in-run CI passes, the `merge` job squash-merges the PR with GITHUB_TOKEN, pinned
+# to the CI'd head SHA (--match-head-commit), and deletes the branch. If CI fails the PR stays open
+# and the run fails.
+#
+# RELEASE (GATED OFF). Design: after the merge, the `release` job tags the next patch version
+# (vX.Y.Z+1) on the merge commit and dispatches release.yml on that tag, because a tag or merge made
+# with GITHUB_TOKEN starts no push-triggered run. release.yml is ticket #8 and does not exist yet,
+# so the job only runs when the repository variable RELEASE_ENABLED is 'true'. Do not set it until
+# #8 has landed. While it is unset, a merged regeneration produces no release; ci.yml's `snapshot`
+# job still builds a binary artifact for the PR head.
+#
+# OWNER STEPS.
+# 1. "Allow GitHub Actions to create and approve pull requests" must be ON, first at the
+#    scientist-labs organization (Settings, Actions, General; the repository setting is rejected
+#    with 409 while the org setting is off), then for this repository (same page). Until then the
+#    job pushes automation/regenerate and fails with a message naming the setting.
+# 2. No PAT or App is needed for anything above. When #8 lands and RELEASE_ENABLED is set, the
+#    `release` job needs only GITHUB_TOKEN (contents: write, actions: write); confirm that #8's
+#    release.yml accepts workflow_dispatch with a `tag` input.
+on:
+  schedule:
+    # After the SDK repo's 06:17 UTC regeneration has had time to tag.
+    - cron: "17 9 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: regenerate
+  cancel-in-progress: false
+
+jobs:
+  regenerate:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    outputs:
+      operation: ${{ steps.pr.outputs.pull-request-operation }}
+      head-sha: ${{ steps.pr.outputs.pull-request-head-sha }}
+      number: ${{ steps.pr.outputs.pull-request-number }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+      - name: Bump the SDK pin and regenerate
+        id: bump
+        run: bin/bump-sdk "$RUNNER_TEMP/body.md"
+      - name: Open or update the pull request
+        id: pr
+        if: steps.bump.outputs.changed == 'true'
+        # The action pushes the branch before it creates the PR. If PR creation is refused (see
+        # owner step 1), keep the pushed branch and fail in the next step with a clear message.
+        continue-on-error: true
+        uses: peter-evans/create-pull-request@v7
+        with:
+          branch: automation/regenerate
+          delete-branch: true
+          commit-message: "Bump SDK to ${{ steps.bump.outputs.to }} and regenerate"
+          title: "Bump SDK to ${{ steps.bump.outputs.to }} and regenerate the command tree"
+          body-path: ${{ runner.temp }}/body.md
+      - name: Fail clearly if the pull request could not be created
+        if: steps.pr.outcome == 'failure'
+        run: |
+          echo "::error title=Could not create the pull request::The branch automation/regenerate was pushed, but creating the PR failed. Most likely 'Allow GitHub Actions to create and approve pull requests' is off: enable it for the scientist-labs organization (Settings, Actions, General) and then for this repository, then re-run. Or open the PR from automation/regenerate by hand."
+          exit 1
+
+  ci:
+    needs: regenerate
+    if: needs.regenerate.outputs.operation == 'created' || needs.regenerate.outputs.operation == 'updated'
+    uses: ./.github/workflows/ci.yml
+    with:
+      ref: ${{ needs.regenerate.outputs.head-sha }}
+
+  report:
+    needs: [regenerate, ci]
+    if: always() && (needs.regenerate.outputs.operation == 'created' || needs.regenerate.outputs.operation == 'updated')
+    runs-on: ubuntu-latest
+    permissions:
+      statuses: write
+    steps:
+      - name: Post the CI result on the PR head commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ needs.regenerate.outputs.head-sha }}
+          RESULT: ${{ needs.ci.result }}
+        run: |
+          state=failure; [ "$RESULT" = success ] && state=success
+          gh api "repos/$GITHUB_REPOSITORY/statuses/$SHA" \
+            -f state="$state" -f context="ci / regenerated" \
+            -f description="ci.yml on the regenerated branch: $RESULT" \
+            -f target_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+
+  merge:
+    needs: [regenerate, ci, report]
+    if: needs.ci.result == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      # --match-head-commit refuses the merge if the branch moved after CI ran.
+      - name: Squash-merge the pull request and delete its branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NUMBER: ${{ needs.regenerate.outputs.number }}
+          SHA: ${{ needs.regenerate.outputs.head-sha }}
+        run: gh pr merge "$NUMBER" --repo "$GITHUB_REPOSITORY" --squash --delete-branch --match-head-commit "$SHA"
+
+  release:
+    needs: merge
+    # Gated off until #8 (release.yml) lands. See the RELEASE header paragraph.
+    if: vars.RELEASE_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Tag the next patch version and dispatch the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          last=$(git tag --list 'v[0-9]*.[0-9]*.[0-9]*' | sort -V | tail -n 1)
+          [ -n "$last" ] || { echo "no v* tag to increment; the first release is tagged by hand" >&2; exit 1; }
+          IFS=. read -r major minor patch <<< "${last#v}"
+          tag="v$major.$minor.$((patch + 1))"
+          gh api "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/tags/$tag" -f sha="$(git rev-parse HEAD)"
+          gh workflow run release.yml --repo "$GITHUB_REPOSITORY" --ref "$tag"
