@@ -32,9 +32,9 @@ name: Regenerate
 #    scientist-labs organization (Settings, Actions, General; the repository setting is rejected
 #    with 409 while the org setting is off), then for this repository (same page). Until then the
 #    job pushes automation/regenerate and fails with a message naming the setting.
-# 2. No PAT or App is needed for anything above. When #8 lands and RELEASE_ENABLED is set, the
-#    `release` job needs only GITHUB_TOKEN (contents: write, actions: write); confirm that #8's
-#    release.yml accepts workflow_dispatch with a `tag` input.
+# 2. No PAT or App is needed for anything above. When RELEASE_ENABLED is set, the `release` job needs
+#    only GITHUB_TOKEN (contents: write, actions: write). release.yml accepts workflow_dispatch with
+#    no inputs: the tag is the dispatch ref (`--ref "$tag"`), and it refuses a non-tag ref.
 on:
   schedule:
     # After the SDK repo's 06:17 UTC regeneration has had time to tag.
@@ -129,7 +129,7 @@ jobs:
 
   release:
     needs: merge
-    # Gated off until #8 (release.yml) lands. See the RELEASE header paragraph.
+    # Gated off by RELEASE_ENABLED. See the RELEASE header paragraph.
     if: vars.RELEASE_ENABLED == 'true'
     runs-on: ubuntu-latest
     permissions:

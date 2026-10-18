@@ -15,7 +15,9 @@ import (
 	"github.com/scientist-labs/pharmaobservatory-cli/internal/cmd/pages"
 )
 
-func userAgent() string { return fmt.Sprintf("po/%s (%s/%s)", version, runtime.GOOS, runtime.GOARCH) }
+func userAgent() string {
+	return fmt.Sprintf("%s/%s (%s/%s)", binaryName, version, runtime.GOOS, runtime.GOARCH)
+}
 
 // pageEnv hands the generated page commands a session-backed SDK client.
 func pageEnv(g *globals, d Deps) *pages.Env {

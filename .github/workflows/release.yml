@@ -1,0 +1,133 @@
+name: Release
+
+# Publishes a release of the Pharma Observatory CLI from a pushed tag vX.Y.Z (or from a
+# workflow_dispatch run whose ref is a tag, which is how regenerate.yml's `release` job starts it:
+# a tag made with GITHUB_TOKEN triggers no push run). Two jobs:
+#
+#   release   GoReleaser: archives (tar.gz, zip), checksums.txt, deb and rpm, the GitHub release with
+#             notes from merged PR titles, the Homebrew formula pushed to the tap, and cosign keyless
+#             signatures for checksums.txt and every archive. A step then verifies those signatures.
+#   packages  builds the signed apt and yum repositories from the release's deb and rpm and pushes
+#             them to the Pages repository (packaging/build-repos.sh).
+#
+# GATED OFF. Every job needs the repository variable RELEASE_ENABLED to be 'true', on top of the
+# tag. While it is unset (the state this file merges in) a tag push or a dispatch runs this workflow
+# and every job is skipped: nothing is released, pushed to the tap, or pushed to the packages repo.
+#
+# SECRETS (all repository secrets, none else is read):
+#   TAP_DEPLOY_KEY          read-write deploy key of scientist-labs/homebrew-pharmaobservatory
+#   PACKAGES_DEPLOY_KEY     read-write deploy key of scientist-labs/pharmaobservatory-packages
+#   PACKAGES_GPG_PRIVATE_KEY, PACKAGES_GPG_PASSPHRASE
+#                           the repository metadata signing key (public half: packaging/)
+# GITHUB_TOKEN (contents: write) creates the release. Cosign signing needs no secret: it uses the
+# job's OIDC token, which is why `id-token: write` is granted to the release job and nowhere else.
+#
+# OWNER STEPS BEFORE THE FIRST RELEASE (the day-of checklist is in packaging/README.md):
+# 1. Settle the binary name (BINARY_NAME in .goreleaser.yml) before the first tag.
+# 2. DNS: packages.pharmaobservatory.com CNAME scientist-labs.github.io (scientist-hq/infra#887), and
+#    verify the domain for the scientist-labs organization in GitHub Pages.
+# 3. Enable Pages on scientist-labs/pharmaobservatory-packages (branch main, root). The first
+#    `packages` run creates that branch's content; Pages can be enabled before or after it.
+# 4. Set RELEASE_ENABLED=true (repository variable), then push the tag.
+on:
+  push:
+    tags: ["v[0-9]+.[0-9]+.[0-9]+*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    # A dispatch must be run against a tag ref, never a branch.
+    if: vars.RELEASE_ENABLED == 'true' && github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+      - uses: sigstore/cosign-installer@v4
+      - uses: goreleaser/goreleaser-action@v6
+        with:
+          distribution: goreleaser
+          version: v2.18.3
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAP_DEPLOY_KEY: ${{ secrets.TAP_DEPLOY_KEY }}
+      - name: Verify the cosign signatures just made
+        working-directory: dist
+        env:
+          IDENTITY: https://github.com/${{ github.repository }}/.github/workflows/release.yml@${{ github.ref }}
+        run: |
+          for f in checksums.txt *.tar.gz *.zip; do
+            cosign verify-blob \
+              --certificate-identity "$IDENTITY" \
+              --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+              --bundle "$f.sigstore.json" "$f"
+          done
+          sha256sum --check --ignore-missing checksums.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-packages
+          path: |
+            dist/*.deb
+            dist/*.rpm
+
+  packages:
+    needs: release
+    if: vars.RELEASE_ENABLED == 'true' && github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: linux-packages
+          path: dist
+      # Not actions/checkout: it fails on a repository with no commits yet, which is the first run.
+      - name: Clone the packages repository over SSH (or start it if empty)
+        env:
+          DEPLOY_KEY: ${{ secrets.PACKAGES_DEPLOY_KEY }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/packages_deploy_key
+          chmod 600 ~/.ssh/packages_deploy_key
+          export GIT_SSH_COMMAND="ssh -i $HOME/.ssh/packages_deploy_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new"
+          echo "GIT_SSH_COMMAND=$GIT_SSH_COMMAND" >> "$GITHUB_ENV"
+          url=git@github.com:scientist-labs/pharmaobservatory-packages.git
+          if git ls-remote --exit-code --heads "$url" main >/dev/null 2>&1; then
+            git clone --branch main "$url" site
+          else
+            git init -b main site
+            git -C site remote add origin "$url"
+          fi
+      - name: Install repository tooling
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq apt-utils createrepo-c gnupg
+      - name: Build the signed apt and yum repositories
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.PACKAGES_GPG_PRIVATE_KEY }}
+          GPG_PASSPHRASE: ${{ secrets.PACKAGES_GPG_PASSPHRASE }}
+        run: packaging/build-repos.sh dist site
+      - name: Commit and push to the packages repository
+        working-directory: site
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          git config user.name pharmaobservatory-release
+          git config user.email noreply@github.com
+          git add -A
+          git diff --cached --quiet && { echo "no change to publish"; exit 0; }
+          git commit -m "Publish $TAG"
+          git push origin HEAD:main
