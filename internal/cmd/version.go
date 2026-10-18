@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 
+	"github.com/scientist-labs/pharmaobservatory-cli/internal/apierr"
 	"github.com/spf13/cobra"
 )
 
@@ -16,10 +17,10 @@ var (
 func newVersionCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "version",
-		Short: "Print the po version, commit and build date",
+		Short: "Print the " + apierr.Bin + " version, commit and build date",
 		Args:  noArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			_, err := fmt.Fprintf(cmd.OutOrStdout(), "po version %s (commit %s, built %s)\n", version, commit, date)
+			_, err := fmt.Fprintf(cmd.OutOrStdout(), "%s version %s (commit %s, built %s)\n", apierr.Bin, version, commit, date)
 			return err
 		},
 	}

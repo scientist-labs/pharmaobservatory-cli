@@ -15,7 +15,7 @@ func NewRoot() *cobra.Command { return NewRootWith(defaultDeps()) }
 func NewRootWith(d Deps) *cobra.Command {
 	g := &globals{}
 	root := &cobra.Command{
-		Use:           "po",
+		Use:           apierr.Bin,
 		Short:         "Pharma Observatory command line client",
 		SilenceUsage:  true,
 		SilenceErrors: false,

@@ -15,7 +15,9 @@ import (
 	"github.com/scientist-labs/pharmaobservatory-cli/internal/cmd/pages"
 )
 
-func userAgent() string { return fmt.Sprintf("po/%s (%s/%s)", version, runtime.GOOS, runtime.GOARCH) }
+func userAgent() string {
+	return fmt.Sprintf("%s/%s (%s/%s)", apierr.Bin, version, runtime.GOOS, runtime.GOARCH)
+}
 
 // pageEnv hands the generated page commands a session-backed SDK client.
 func pageEnv(g *globals, d Deps) *pages.Env {
@@ -71,7 +73,7 @@ func newAPICmd(g *globals, d Deps) *cobra.Command {
 		Long: "Make an authenticated GET to <origin>/api/v1/<path> and print the response body.\n\n" +
 			"A path starting with / is used as given (for example /api/v1/whoami). The request goes to the\n" +
 			"profile origin only. Use -F key=value, repeatable, to add query parameters.\n\n" +
-			"Example: po api biomarkers -F kind=gene -F limit=5",
+			"Example: " + apierr.Bin + " api biomarkers -F kind=gene -F limit=5",
 		Args: func(_ *cobra.Command, args []string) error {
 			if len(args) != 1 {
 				return apierr.Usage(fmt.Errorf("api needs exactly one path"))

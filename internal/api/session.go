@@ -66,7 +66,7 @@ func (s *Session) now() time.Time {
 }
 
 func (s *Session) notLoggedIn() error {
-	return apierr.Auth("not logged in to %s; run: po login --profile %s", s.Profile.Name, s.Profile.Name)
+	return apierr.Auth("not logged in to %s; run: %s login --profile %s", s.Profile.Name, apierr.Bin, s.Profile.Name)
 }
 
 // Load reads the stored credential and refuses a profile/origin mismatch locally.
@@ -79,8 +79,8 @@ func (s *Session) Load() (store.Credential, error) {
 		return c, err
 	}
 	if c.Aud != s.Profile.Resource() || c.ClientID != s.Profile.ClientID {
-		return c, apierr.Auth("the stored login for %s was made for %s, not %s; run: po login --profile %s",
-			s.Profile.Name, c.Aud, s.Profile.Resource(), s.Profile.Name)
+		return c, apierr.Auth("the stored login for %s was made for %s, not %s; run: %s login --profile %s",
+			s.Profile.Name, c.Aud, s.Profile.Resource(), apierr.Bin, s.Profile.Name)
 	}
 	return c, nil
 }
@@ -96,7 +96,7 @@ func (s *Session) Refresh(ctx context.Context, c store.Credential) (store.Creden
 	if err != nil {
 		var ce *apierr.ClassError
 		if errors.As(err, &ce) && ce.Class == apierr.ExitAuth {
-			return c, apierr.Auth("the stored session could not be renewed (%s); run: po login --profile %s", ce.Msg, s.Profile.Name)
+			return c, apierr.Auth("the stored session could not be renewed (%s); run: %s login --profile %s", ce.Msg, apierr.Bin, s.Profile.Name)
 		}
 		return c, err
 	}
