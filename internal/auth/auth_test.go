@@ -364,3 +364,78 @@ func TestDefaultClock(t *testing.T) {
 		t.Fatal("clock")
 	}
 }
+
+// insecureIDP serves discovery documents whose named field points at an http URL on a non-loopback host.
+func insecureIDP(t *testing.T, field string) *httptest.Server {
+	var srv *httptest.Server
+	mux := http.NewServeMux()
+	mux.HandleFunc("/.well-known/oauth-protected-resource/api/v1", func(w http.ResponseWriter, _ *http.Request) {
+		as := srv.URL
+		if field == "issuer" {
+			as = "http://idp.example.com"
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"authorization_servers": []string{as}})
+	})
+	mux.HandleFunc("/.well-known/oauth-authorization-server", func(w http.ResponseWriter, _ *http.Request) {
+		m := map[string]string{"authorization_endpoint": srv.URL + "/authorize", "token_endpoint": srv.URL + "/token"}
+		if field == "authorize_endpoint" {
+			m["authorization_endpoint"] = "http://idp.example.com/authorize"
+		}
+		if field == "token_endpoint" {
+			m["token_endpoint"] = "http://idp.example.com/token"
+		}
+		_ = json.NewEncoder(w).Encode(m)
+	})
+	srv = httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+func TestDiscoverRefusesNonHTTPSNonLoopback(t *testing.T) {
+	for _, field := range []string{"issuer", "authorize_endpoint", "token_endpoint"} {
+		srv := insecureIDP(t, field)
+		_, err := Discover(context.Background(), srv.Client(), srv.URL)
+		if apierr.ExitCode(err) != apierr.ExitUsage || !strings.Contains(err.Error(), "must be https") {
+			t.Errorf("%s: %v", field, err)
+		}
+	}
+	if _, err := Discover(context.Background(), http.DefaultClient, "http://origin.example.com"); apierr.ExitCode(err) != apierr.ExitUsage {
+		t.Fatalf("http origin: %v", err)
+	}
+}
+
+func TestLoopbackHTTPDiscoveryAllowed(t *testing.T) {
+	f := newIDP(t, "x") // httptest listens on 127.0.0.1 over http
+	if _, err := Discover(context.Background(), f.srv.Client(), f.srv.URL); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestTokenRequestRefusesHTTPEndpointBeforeSending(t *testing.T) {
+	c := Client{HC: http.DefaultClient, Token: "http://idp.example.com/token", ClientID: "c", Resource: "r"}
+	_, err := c.Exchange(context.Background(), "code", "verifier", "http://127.0.0.1/cb")
+	if apierr.ExitCode(err) != apierr.ExitUsage {
+		t.Fatalf("%v", err)
+	}
+	if _, err := c.Refresh(context.Background(), "rt"); apierr.ExitCode(err) != apierr.ExitUsage {
+		t.Fatalf("%v", err)
+	}
+}
+
+func TestServerErrorDescriptionIsSanitized(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(400)
+		_, _ = w.Write([]byte(`{"error":"invalid_grant","error_description":"gone\u001b[31m RED\u001b]0;pwn\u0007\nsecond"}`))
+	}))
+	defer srv.Close()
+	c := Client{HC: srv.Client(), Token: srv.URL, ClientID: "c", Resource: "r"}
+	_, err := c.Refresh(context.Background(), "rt")
+	if err == nil || strings.ContainsAny(err.Error(), "\x1b\x07\n") || !strings.Contains(err.Error(), "gone[31m RED]0;pwnsecond") {
+		t.Fatalf("%q", err)
+	}
+	q := url.Values{"error": {"access_denied"}, "error_description": {"no\x1b[2J way"}}
+	_, err = CodeFromQuery(q, "s")
+	if err == nil || strings.Contains(err.Error(), "\x1b") || !strings.Contains(err.Error(), "no[2J way") {
+		t.Fatalf("%q", err)
+	}
+}

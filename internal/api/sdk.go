@@ -18,7 +18,7 @@ func (s *Session) SDK(userAgent string) *sdk.APIClient {
 	cfg.Servers = sdk.ServerConfigurations{{URL: s.Profile.Base()}}
 	cfg.OperationServers = nil
 	cfg.UserAgent = userAgent
-	cfg.HTTPClient = &http.Client{Transport: &bearerTransport{s: s}, Timeout: s.HC.Timeout}
+	cfg.HTTPClient = &http.Client{Transport: &bearerTransport{s: s}, Timeout: s.HC.Timeout, CheckRedirect: apierr.SecureRedirect}
 	return sdk.NewAPIClient(cfg)
 }
 
@@ -29,6 +29,9 @@ func (t *bearerTransport) send(req *http.Request, token string) (*http.Response,
 	r.Header.Set("Authorization", "Bearer "+token)
 	resp, err := t.s.HC.Do(r)
 	if err != nil {
+		if u := apierr.UsageCause(err); u != nil {
+			return nil, u
+		}
 		return nil, apierr.Unavailable("cannot reach %s: %v", t.s.Profile.Base(), err)
 	}
 	return resp, nil

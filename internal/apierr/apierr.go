@@ -93,7 +93,7 @@ func FromResponse(status int, body []byte, profile string) error {
 		if b.Role == "" {
 			return Forbidden("your organization lacks a role the API requires (missing_role)")
 		}
-		return Forbidden("your organization lacks the role %s (missing_role); ask your organization admin", b.Role)
+		return Forbidden("your organization lacks the role %s (missing_role); ask your organization admin", Sanitize(b.Role))
 	case status == 403 && b.Error == "access_pending":
 		return Forbidden("this account has no entitlement yet (access_pending); request access at the Pharma Observatory site")
 	case status == 503 && b.Error == "no_identity_provider":
@@ -105,7 +105,7 @@ func FromResponse(status int, body []byte, profile string) error {
 	case status >= 500:
 		return Unavailable("the server answered HTTP %d", status)
 	}
-	raw := string(body)
+	raw := Sanitize(string(body))
 	if len(raw) > 300 {
 		raw = raw[:300]
 	}

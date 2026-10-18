@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -41,7 +42,7 @@ func newWhoamiCmd(g *globals, d Deps) *cobra.Command {
 				return fmt.Errorf("whoami: unreadable response: %w", err)
 			}
 			_, _ = fmt.Fprintf(out, "profile: %s\norigin:  %s\nsub:     %s\nroles:   %s\n",
-				s.Profile.Name, s.Profile.Origin, w.Sub, strings.Join(w.Roles, ", "))
+				s.Profile.Name, s.Profile.Origin, apierr.Sanitize(w.Sub), apierr.Sanitize(strings.Join(w.Roles, ", ")))
 			return nil
 		},
 	}
@@ -54,21 +55,37 @@ func newLogoutCmd(g *globals, d Deps) *cobra.Command {
 		Long:  "Removes the stored credential locally. The refresh token is not revoked server-side.",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			s, err := g.session(d)
+			p, _, err := g.resolve()
 			if err != nil {
 				return err
 			}
-			if _, err := s.Store.Get(s.Profile.Name); err != nil {
-				if err == store.ErrNotFound {
-					_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Not logged in to %s; nothing to remove.\n", s.Profile.Name)
-					return nil
+			// Remove from every store that holds it: a login that fell back to the file and a
+			// later one that used the keychain can leave the profile in both.
+			stores, err := store.All(d.Keyring, p.Name)
+			if err != nil {
+				return err
+			}
+			var removed []string
+			for _, st := range stores {
+				_, gerr := st.Get(p.Name)
+				if errors.Is(gerr, store.ErrNotFound) {
+					continue
 				}
-				return err
+				derr := st.Delete(p.Name)
+				if gerr != nil {
+					// Unreadable store (a broken keychain): best effort, the other store still runs.
+					continue
+				}
+				if derr != nil {
+					return derr
+				}
+				removed = append(removed, st.Name())
 			}
-			if err := s.Store.Delete(s.Profile.Name); err != nil {
-				return err
+			if len(removed) == 0 {
+				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Not logged in to %s; nothing to remove.\n", p.Name)
+				return nil
 			}
-			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Logged out of %s (removed from the %s).\n", s.Profile.Name, s.Store.Name())
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Logged out of %s (removed from the %s).\n", p.Name, strings.Join(removed, " and the "))
 			return nil
 		},
 	}
