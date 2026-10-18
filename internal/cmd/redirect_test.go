@@ -169,7 +169,7 @@ func TestRedirectHTTPSToHTTPSStillWorks(t *testing.T) {
 		t.Fatalf("%v %s", err, out)
 	}
 	r.bounce["/api/v1/biomarkers"] = r.srv.URL + "/api/v1/whoami-final"
-	if out, err := r.run("", "biomarkers", "list", "--profile", "local"); err != nil {
+	if out, err := r.run("", "biomarkers", "list", "--json", "--profile", "local"); err != nil {
 		t.Fatalf("%v %s", err, out)
 	}
 	if r.hits.Load() != 0 {
