@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -83,6 +84,8 @@ type env struct {
 	seen    []string                                     // request URIs the api handler saw
 	apiAuth []string                                     // Authorization headers the api handler saw
 	opener  func(authURL string) error
+	sleeps  []time.Duration // every --wait sleep, which the test seam does not actually perform
+	notice  bytes.Buffer    // the --wait notice
 }
 
 func newEnv(t *testing.T) *env {
@@ -141,6 +144,8 @@ func (e *env) run(args ...string) (string, error) {
 	d := Deps{
 		HC: e.srv.Client(), Keyring: e.kr, Stdin: strings.NewReader(e.stdin), Now: func() time.Time { return e.clock },
 		CallbackWait: 5 * time.Second,
+		Sleep:        func(_ context.Context, d time.Duration) error { e.sleeps = append(e.sleeps, d); return nil },
+		Stderr:       &e.notice,
 		OpenBrowser: func(u string) error {
 			if e.opener != nil {
 				return e.opener(u)

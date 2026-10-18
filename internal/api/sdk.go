@@ -38,8 +38,25 @@ func (t *bearerTransport) send(req *http.Request, token string) (*http.Response,
 }
 
 // RoundTrip sends a GET with the bearer. A 401 expired_token refreshes and retries exactly once;
-// invalid_audience is never retried. Every call here is a bodyless GET, so a replay is safe.
+// invalid_audience is never retried. Under Wait a 429 with a usable Retry-After sleeps and retries
+// once. Every call here is a bodyless GET, so a replay is safe.
 func (t *bearerTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	resp, err := t.authed(req)
+	if err != nil || !t.s.Wait || resp.StatusCode != http.StatusTooManyRequests {
+		return resp, err
+	}
+	d, ok := t.s.waitDelay(resp.StatusCode, resp.Header)
+	if !ok {
+		return resp, nil
+	}
+	_ = resp.Body.Close()
+	if err := t.s.pause(req.Context(), d); err != nil {
+		return nil, err
+	}
+	return t.authed(req)
+}
+
+func (t *bearerTransport) authed(req *http.Request) (*http.Response, error) {
 	c, err := t.s.Fresh(req.Context())
 	if err != nil {
 		return nil, err

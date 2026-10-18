@@ -59,3 +59,24 @@ under `/api/v1/`; a path starting with `/` is used as given; `-F key=value` adds
 po api biomarkers -F kind=gene -F limit=5
 po api /api/v1/whoami
 ```
+
+## Exit codes and rate limits
+
+Scripts can branch on the exit code. `po exit-codes` prints this table (`--markdown` for this form).
+
+| exit | class | when |
+|---|---|---|
+| 0 | ok | success, including a warning that the SDK could not decode a response |
+| 1 | unexpected | an error word not in the table (the raw body is printed), a failure in the CLI itself |
+| 2 | usage | a bad flag or argument; an unknown command; 400 refusals (id_required, id_not_accepted, invalid_cursor, unknown_sort, unknown_dir, unknown_filter, unsupported_parameter) |
+| 3 | auth | not logged in; 401 missing_token, invalid_token, expired_token (after the one silent refresh), invalid_audience; a failed login |
+| 4 | forbidden | 403 access_pending, client_suspended, missing_role (the role is named), not_entitled (the credit is printed) |
+| 5 | not found | 404 unknown_page, unknown_section, not_found |
+| 6 | rate limited | 429 quota_exceeded: says which limit, when it resets and how long to wait; --wait sleeps up to 2 minutes and retries once; a depth refusal cannot be waited out |
+| 7 | unavailable | 503 no_identity_provider, any other 5xx, a network failure, 409 generation_changed |
+| 8 | not answered | a 200 whose body says unbuilt or not_applicable |
+| 9 | partial | --all printed some pages and then stopped |
+
+A 429 exits 6 and says which limit was hit, when it resets and how long to wait. It does not wait
+by default; `--wait` sleeps for the Retry-After (at most 2 minutes) and retries once. A paging-depth
+refusal has no Retry-After and cannot be waited out: narrow the query.

@@ -24,6 +24,9 @@ type Deps struct {
 	Now          func() time.Time
 	CallbackWait time.Duration
 	DefaultPort  int
+	// Sleep and Stderr are the --wait seams: nil means a real sleep and os.Stderr.
+	Sleep  func(ctx context.Context, d time.Duration) error
+	Stderr io.Writer
 }
 
 func defaultDeps() Deps {
@@ -61,6 +64,7 @@ type globals struct {
 	json     bool
 	csv      bool
 	all      bool
+	wait     bool
 	quiet    bool
 	noFooter bool
 }
@@ -104,7 +108,11 @@ func (g *globals) session(d Deps) (*api.Session, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &api.Session{Profile: p, Store: st, HC: d.HC, Now: d.Now}, nil
+	notice := d.Stderr
+	if notice == nil {
+		notice = os.Stderr
+	}
+	return &api.Session{Profile: p, Store: st, HC: d.HC, Now: d.Now, Wait: g.wait, Sleep: d.Sleep, Notice: notice}, nil
 }
 
 func ctxOf(cmdCtx context.Context) context.Context {

@@ -302,10 +302,10 @@ func (w *walker) fetch() ([]byte, error) {
 	defer func() { _ = resp.Body.Close() }()
 	body, rerr := io.ReadAll(io.LimitReader(resp.Body, 64<<20))
 	if rerr != nil {
-		return nil, rerr
+		return nil, apierr.Unavailable("reading the response failed: %v", rerr)
 	}
 	if resp.StatusCode != http.StatusOK {
-		err := apierr.FromResponse(resp.StatusCode, body, w.cl.Profile)
+		err := apierr.FromResponse(resp.StatusCode, resp.Header, body, w.cl.Profile)
 		if resp.StatusCode == http.StatusConflict {
 			var b struct {
 				Error string `json:"error"`
