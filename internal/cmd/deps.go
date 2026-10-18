@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/scientist-labs/pharmaobservatory-cli/internal/api"
+	"github.com/scientist-labs/pharmaobservatory-cli/internal/apierr"
 	"github.com/scientist-labs/pharmaobservatory-cli/internal/auth/store"
 	"github.com/scientist-labs/pharmaobservatory-cli/internal/config"
 )
@@ -73,7 +74,21 @@ func (g *globals) resolve() (config.Profile, config.File, error) {
 	if g.apiBase != "" {
 		p.APIBase = g.apiBase
 	}
+	if err := checkSecure(p); err != nil {
+		return p, f, err
+	}
 	return p, f, nil
+}
+
+// checkSecure refuses a profile whose origin or request base is not https (loopback excepted).
+func checkSecure(p config.Profile) error {
+	if err := apierr.RequireSecure("origin", p.Origin); err != nil {
+		return err
+	}
+	if p.APIBase != "" {
+		return apierr.RequireSecure("api base", p.APIBase)
+	}
+	return nil
 }
 
 func (g *globals) session(d Deps) (*api.Session, error) {

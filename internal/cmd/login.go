@@ -30,6 +30,9 @@ func newLoginCmd(g *globals, d Deps) *cobra.Command {
 			out := cmd.OutOrStdout()
 			p, f, err := g.resolveForLogin(origin, clientID)
 			if err != nil {
+				if apierr.ExitCode(err) == apierr.ExitUsage {
+					return err
+				}
 				return apierr.Usage(err)
 			}
 			ctx := ctxOf(cmd.Context())
@@ -137,6 +140,9 @@ func (g *globals) resolveForLogin(origin, clientID string) (config.Profile, conf
 	}
 	if g.apiBase != "" {
 		p.APIBase = g.apiBase
+	}
+	if err := checkSecure(p); err != nil {
+		return p, f, err
 	}
 	return p, f, nil
 }

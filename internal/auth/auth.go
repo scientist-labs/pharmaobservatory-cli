@@ -61,6 +61,9 @@ func getJSON(ctx context.Context, hc *http.Client, u string, out any) error {
 // Discover reads the protected-resource document at base and the first authorization server's
 // metadata.
 func Discover(ctx context.Context, hc *http.Client, base string) (Endpoints, error) {
+	if err := apierr.RequireSecure("origin", base); err != nil {
+		return Endpoints{}, err
+	}
 	var prm struct {
 		AuthorizationServers []string `json:"authorization_servers"`
 		ScopesSupported      []string `json:"scopes_supported"`
@@ -72,6 +75,9 @@ func Discover(ctx context.Context, hc *http.Client, base string) (Endpoints, err
 		return Endpoints{}, errors.New("discovery: no authorization_servers advertised")
 	}
 	issuer := strings.TrimSuffix(prm.AuthorizationServers[0], "/")
+	if err := apierr.RequireSecure("authorization server", issuer); err != nil {
+		return Endpoints{}, err
+	}
 	var meta struct {
 		AuthorizationEndpoint string `json:"authorization_endpoint"`
 		TokenEndpoint         string `json:"token_endpoint"`
@@ -81,6 +87,12 @@ func Discover(ctx context.Context, hc *http.Client, base string) (Endpoints, err
 	}
 	if meta.AuthorizationEndpoint == "" || meta.TokenEndpoint == "" {
 		return Endpoints{}, errors.New("discovery: authorization server metadata lacks authorize or token endpoint")
+	}
+	if err := apierr.RequireSecure("authorize endpoint", meta.AuthorizationEndpoint); err != nil {
+		return Endpoints{}, err
+	}
+	if err := apierr.RequireSecure("token endpoint", meta.TokenEndpoint); err != nil {
+		return Endpoints{}, err
 	}
 	return Endpoints{Authorize: meta.AuthorizationEndpoint, Token: meta.TokenEndpoint, Scopes: prm.ScopesSupported}, nil
 }
@@ -154,8 +166,8 @@ func AuthorizeURL(p AuthorizeParams) string {
 // CallbackError is an error reported on the redirect.
 func callbackErr(q url.Values) error {
 	if e := q.Get("error"); e != "" {
-		msg := "authorization failed: " + e
-		if d := q.Get("error_description"); d != "" {
+		msg := "authorization failed: " + apierr.Sanitize(e)
+		if d := apierr.Sanitize(q.Get("error_description")); d != "" {
 			msg += " (" + d + ")"
 		}
 		return apierr.Auth("%s", msg)
@@ -256,6 +268,9 @@ type tokenResponse struct {
 
 func postToken(ctx context.Context, hc *http.Client, endpoint string, form url.Values) (tokenResponse, error) {
 	var tr tokenResponse
+	if err := apierr.RequireSecure("token endpoint", endpoint); err != nil {
+		return tr, err
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, strings.NewReader(form.Encode()))
 	if err != nil {
 		return tr, err
@@ -275,10 +290,10 @@ func postToken(ctx context.Context, hc *http.Client, endpoint string, form url.V
 		}
 		msg := fmt.Sprintf("token request refused: HTTP %d", resp.StatusCode)
 		if tr.Error != "" {
-			msg += " " + tr.Error
+			msg += " " + apierr.Sanitize(tr.Error)
 		}
-		if tr.Description != "" {
-			msg += " (" + tr.Description + ")"
+		if d := apierr.Sanitize(tr.Description); d != "" {
+			msg += " (" + d + ")"
 		}
 		return tr, apierr.Auth("%s", msg)
 	}
