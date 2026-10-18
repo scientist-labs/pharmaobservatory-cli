@@ -1,6 +1,11 @@
 package pages
 
 import (
+	"bytes"
+	"context"
+	"errors"
+	"io"
+	"net/http"
 	"os/exec"
 	"sort"
 	"strings"
@@ -10,6 +15,7 @@ import (
 	"github.com/spf13/pflag"
 
 	"github.com/scientist-labs/pharmaobservatory-cli/internal/gen/tree"
+	sdk "github.com/scientist-labs/pharmaobservatory-sdks/go"
 )
 
 const sdkModule = "github.com/scientist-labs/pharmaobservatory-sdks/go"
@@ -188,5 +194,22 @@ func TestCollidingNamesAreRegisteredOnlyUnderTheEscapeCommands(t *testing.T) {
 	sec, _, _ := root.Find([]string{"widgets", "section"})
 	if names(sec) != "help" {
 		t.Fatalf("section: %s", names(sec))
+	}
+}
+
+func TestDecodeWarningIsOneSanitizedLine(t *testing.T) {
+	var errBuf bytes.Buffer
+	cmd := &cobra.Command{}
+	cmd.SetErr(&errBuf)
+	w := &walker{cmd: cmd, o: &Op{Call: func(context.Context, *sdk.APIClient, string, *pflag.FlagSet) (*http.Response, error) {
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader("[1,2]"))},
+			errors.New("bad\x1b[31m\nforged line")
+	}}, cl: &Client{}}
+	if _, err := w.fetch(); err != nil {
+		t.Fatal(err)
+	}
+	got := errBuf.String()
+	if strings.Contains(got, "\x1b") || strings.Count(got, "\n") != 1 || !strings.HasSuffix(got, "\n") {
+		t.Fatalf("not a single clean line: %q", got)
 	}
 }

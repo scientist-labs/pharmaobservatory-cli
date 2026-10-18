@@ -20,6 +20,7 @@ import (
 
 	"github.com/scientist-labs/pharmaobservatory-cli/internal/apierr"
 	"github.com/scientist-labs/pharmaobservatory-cli/internal/output"
+	"github.com/scientist-labs/pharmaobservatory-cli/internal/sanitize"
 )
 
 // Op is one generated operation: its flags, its help and the typed SDK call.
@@ -317,7 +318,7 @@ func (w *walker) fetch() ([]byte, error) {
 		return body, err
 	}
 	if callErr != nil && !inBodyState(body) {
-		_, _ = fmt.Fprintf(w.cmd.ErrOrStderr(), "warning: the SDK (%s) could not decode this response (%v); printing the raw body. This is an SDK bug.\n", SDKVersion, callErr)
+		_, _ = fmt.Fprintf(w.cmd.ErrOrStderr(), "warning: the SDK (%s) could not decode this response (%v); printing the raw body. This is an SDK bug.\n", SDKVersion, sanitize.Line(callErr.Error()))
 	}
 	return body, nil
 }
