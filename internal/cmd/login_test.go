@@ -78,6 +78,10 @@ type env struct {
 	refuse  bool     // when set, the token endpoint answers 400 invalid_grant
 	authz   []string // Authorization headers seen by whoami
 	stdin   string
+	api     func(w http.ResponseWriter, r *http.Request) // handles /api/v1/ paths other than whoami
+	errBuf  *bytes.Buffer                                // when set, stderr goes here instead of the returned output
+	seen    []string                                     // request URIs the api handler saw
+	apiAuth []string                                     // Authorization headers the api handler saw
 	opener  func(authURL string) error
 }
 
@@ -119,6 +123,15 @@ func newEnv(t *testing.T) *env {
 		}
 		_, _ = w.Write([]byte(`{"ok":true,"sub":"user_1","roles":["example:api","example:read"]}`))
 	})
+	mux.HandleFunc("/api/v1/", func(w http.ResponseWriter, r *http.Request) {
+		e.seen = append(e.seen, r.URL.RequestURI())
+		e.apiAuth = append(e.apiAuth, r.Header.Get("Authorization"))
+		if e.api != nil {
+			e.api(w, r)
+			return
+		}
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	})
 	e.srv = httptest.NewServer(mux)
 	t.Cleanup(e.srv.Close)
 	return e
@@ -139,6 +152,9 @@ func (e *env) run(args ...string) (string, error) {
 	var out bytes.Buffer
 	root.SetOut(&out)
 	root.SetErr(&out)
+	if e.errBuf != nil {
+		root.SetErr(e.errBuf)
+	}
 	root.SetArgs(args)
 	err := root.Execute()
 	return out.String(), err

@@ -1,0 +1,47 @@
+openapi: 3.0.3
+info: {title: Synthetic, version: 1.0.0}
+paths:
+  /api/v1/widgets:
+    get:
+      operationId: widgets.list
+      summary: Widgets
+      tags: [widgets]
+      parameters:
+      - {name: cursor, in: query, description: Opaque cursor, schema: {type: string}}
+      - {name: limit, in: query, schema: {type: integer}}
+      - {name: json, in: query, schema: {type: boolean}}
+      - {name: ratio, in: query, schema: {type: number}}
+  /api/v1/widgets/{id}:
+    get:
+      operationId: widgets.get
+      summary: One widget
+      tags: [widgets]
+      parameters:
+      - {name: id, in: path, required: true, schema: {type: string}}
+  /api/v1/widgets/{id}/parts:
+    get:
+      operationId: widgets.parts
+      summary: Parts of a widget
+      tags: [widgets]
+      parameters:
+      - {name: id, in: path, required: true, schema: {type: string}}
+      - {name: colour, in: query, schema: {type: string}}
+  /api/v1/widgets/counts:
+    get:
+      operationId: widgets.counts
+      summary: Widget counts
+      tags: [widgets]
+  /api/v1/widgets/help:
+    get:
+      operationId: widgets.help
+      summary: A section whose key collides
+      tags: [widgets]
+  /api/v1/login:
+    get:
+      operationId: login.list
+      summary: A page whose slug collides
+      tags: [login]
+  /api/v1/whoami:
+    get:
+      summary: whoami
+      tags: ["Api::V1::Base"]
