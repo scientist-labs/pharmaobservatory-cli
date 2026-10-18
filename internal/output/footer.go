@@ -30,10 +30,10 @@ func AttributionLines(e *Envelope) []string {
 		if a.Href != "" {
 			parts = append(parts, a.Href)
 		}
-		out = append(out, strings.Join(parts, " "))
+		out = append(out, Line(strings.Join(parts, " ")))
 	}
 	if e.AttrText != "" {
-		out = append(out, e.AttrText)
+		out = append(out, Line(e.AttrText))
 	}
 	return out
 }
@@ -51,6 +51,7 @@ func WriteFooter(w io.Writer, e *Envelope, o FooterOpts) {
 	for _, l := range AttributionLines(e) {
 		_, _ = fmt.Fprintln(w, l)
 	}
+	say := func(s string) { _, _ = fmt.Fprintln(w, Line(s)) }
 	if o.Quiet {
 		return
 	}
@@ -63,16 +64,16 @@ func WriteFooter(w io.Writer, e *Envelope, o FooterOpts) {
 		if o.Profile != "" {
 			line += " (profile " + o.Profile + ")"
 		}
-		_, _ = fmt.Fprintln(w, line)
+		say(line)
 	}
 	if r := e.Resolution; r != nil {
-		_, _ = fmt.Fprintf(w, "resolved: %s (%s)\n", r.MatchTier, r.Verdict)
+		say(fmt.Sprintf("resolved: %s (%s)", r.MatchTier, r.Verdict))
 	}
 	if e.WebURL != "" {
-		_, _ = fmt.Fprintln(w, e.WebURL)
+		say(e.WebURL)
 	}
 	if e.Pagination != nil {
-		_, _ = fmt.Fprintln(w, pagingLine(e.Pagination, o))
+		say(pagingLine(e.Pagination, o))
 	}
 }
 

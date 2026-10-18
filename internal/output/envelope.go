@@ -109,15 +109,15 @@ func (e *Envelope) State() error {
 	case "":
 		return nil
 	case "unbuilt":
-		return &apierr.ClassError{Class: apierr.ExitNotAnswered, Msg: "not answered: " + strings.Join(e.Unbuilt, ", ")}
+		return &apierr.ClassError{Class: apierr.ExitNotAnswered, Msg: "not answered: " + Line(strings.Join(e.Unbuilt, ", "))}
 	case "not_applicable":
-		msg := e.Message
+		msg := Line(e.Message)
 		if msg == "" {
 			msg = "this section does not apply to this record"
 		}
 		return &apierr.ClassError{Class: apierr.ExitNotAnswered, Msg: "not applicable: " + msg}
 	}
-	return fmt.Errorf("unexpected answer %q: %s", e.Error, e.Message)
+	return fmt.Errorf("unexpected answer %q: %s", Line(e.Error), Line(e.Message))
 }
 
 // IsTable reports whether the body has a table to draw.

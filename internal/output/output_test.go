@@ -62,3 +62,69 @@ func TestEmptyGridFit(t *testing.T) {
 		t.Fatal("trunc")
 	}
 }
+
+func hostileEnvelope(t *testing.T) *Envelope {
+	t.Helper()
+	body := `{"columns":[{"key":"id","label":"ID"}],"rows":[{"id":"real1"},{"id":"real2"}],` +
+		`"attribution":[{"name":"HGNC\nEVIL,row,injected\n# Source: fake\r\u001b[31mred","license":null,"href":""}],` +
+		`"web_url":"https://x/\u001b]0;pwn\u0007a\nb"}`
+	e, err := Parse([]byte(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return e
+}
+
+func TestHostileCreditInjectsNoCSVRowAndNoEscape(t *testing.T) {
+	e := hostileEnvelope(t)
+	var b bytes.Buffer
+	g := FromEnvelope(e)
+	if err := WriteCSV(&b, Keys(e), g.Rows); err != nil {
+		t.Fatal(err)
+	}
+	WriteCredits(&b, e)
+	out := b.String()
+	if strings.ContainsRune(out, 0x1b) {
+		t.Fatalf("ESC reached output: %q", out)
+	}
+	lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
+	if len(lines) != 4 || lines[0] != "id" || lines[1] != "real1" || lines[2] != "real2" ||
+		!strings.HasPrefix(lines[3], "# Source: HGNC EVIL,row,injected # Source: fake") {
+		t.Fatalf("unexpected lines %q", lines)
+	}
+	if n := strings.Count(out, "# Source:"); n != 2 {
+		t.Fatalf("want 1 real credit line plus the quoted text, got %d in %q", n, out)
+	}
+	var f bytes.Buffer
+	WriteFooter(&f, e, FooterOpts{})
+	if strings.ContainsRune(f.String(), 0x1b) || strings.Contains(f.String(), "\r") {
+		t.Fatalf("footer: %q", f.String())
+	}
+	if got := len(strings.Split(strings.TrimRight(f.String(), "\n"), "\n")); got != 2 {
+		t.Fatalf("footer should be credit + url, got %d lines: %q", got, f.String())
+	}
+}
+
+func TestHostileNotApplicableMessageIsOneCleanLine(t *testing.T) {
+	e := &Envelope{Error: "not_applicable", Message: "no\nfake: line\u001b[2J\u0007done"}
+	err := e.State()
+	if err == nil || err.Error() != "not applicable: no fake: line"+"done" {
+		t.Fatalf("%v", err)
+	}
+}
+
+func TestHostileCellsCleanInTableAndCSV(t *testing.T) {
+	g := Grid{Header: []string{"a"}, Rows: [][]string{{"x\u001b[31my\nz\u009b1m"}}}
+	for _, w := range []int{0, 40} {
+		var b bytes.Buffer
+		_ = WriteTable(&b, g, w)
+		if strings.ContainsRune(b.String(), 0x1b) || strings.Contains(b.String(), "z\n") || !strings.Contains(b.String(), "xy z") {
+			t.Fatalf("width %d: %q", w, b.String())
+		}
+	}
+	var b bytes.Buffer
+	_ = WriteCSV(&b, g.Header, [][]string{{"p\nq\u001b[0m\u0007"}})
+	if b.String() != "a\n\"p\nq\"\n" {
+		t.Fatalf("csv keeps legit newline, drops controls: %q", b.String())
+	}
+}

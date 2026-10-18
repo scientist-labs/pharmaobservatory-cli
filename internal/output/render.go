@@ -74,17 +74,27 @@ func Keys(e *Envelope) []string {
 // WriteCSV writes RFC 4180 quoted CSV: the header, then the rows.
 func WriteCSV(w io.Writer, header []string, rows [][]string) error {
 	cw := csv.NewWriter(w)
-	if err := cw.Write(header); err != nil {
+	if err := cw.Write(cleanCSV(header)); err != nil {
 		return err
 	}
-	if err := cw.WriteAll(rows); err != nil {
+	clean := make([][]string, len(rows))
+	for i, r := range rows {
+		clean[i] = cleanCSV(r)
+	}
+	if err := cw.WriteAll(clean); err != nil {
 		return err
 	}
 	cw.Flush()
 	return cw.Error()
 }
 
-var oneLine = strings.NewReplacer("\t", " ", "\r\n", " ", "\n", " ", "\r", " ")
+func cleanCSV(cells []string) []string {
+	out := make([]string, len(cells))
+	for i, c := range cells {
+		out[i] = CSVCell(c)
+	}
+	return out
+}
 
 // WriteTable writes the grid: width-aware columns when width > 0 (a terminal), tab-separated
 // otherwise.
@@ -92,7 +102,7 @@ func WriteTable(w io.Writer, g Grid, width int) error {
 	clean := func(cells []string) []string {
 		out := make([]string, len(cells))
 		for i, c := range cells {
-			out[i] = oneLine.Replace(c)
+			out[i] = Line(c)
 		}
 		return out
 	}
