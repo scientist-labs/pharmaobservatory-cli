@@ -55,9 +55,13 @@ func openBrowser(url string) error {
 
 // globals are the persistent flags.
 type globals struct {
-	profile string
-	apiBase string
-	json    bool
+	profile  string
+	apiBase  string
+	json     bool
+	csv      bool
+	all      bool
+	quiet    bool
+	noFooter bool
 }
 
 // resolve picks and resolves the profile for a command, applying the one-off --api-base.

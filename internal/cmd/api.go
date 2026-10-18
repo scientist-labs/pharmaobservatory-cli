@@ -4,10 +4,12 @@ import (
 	"fmt"
 	"io"
 	"net/url"
+	"os"
 	"runtime"
 	"strings"
 
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 
 	"github.com/scientist-labs/pharmaobservatory-cli/internal/apierr"
 	"github.com/scientist-labs/pharmaobservatory-cli/internal/cmd/pages"
@@ -25,7 +27,10 @@ func pageEnv(g *globals, d Deps) *pages.Env {
 			}
 			return &pages.Client{SDK: s.SDK(userAgent()), Profile: s.Profile.Name}, nil
 		},
-		JSON: func() bool { return g.json },
+		Settings: func() pages.Settings {
+			return pages.Settings{JSON: g.json, CSV: g.csv, All: g.all, Quiet: g.quiet || g.noFooter}
+		},
+		Width: terminalWidth,
 	}
 }
 
@@ -102,4 +107,16 @@ func writeRaw(w io.Writer, body []byte) {
 	if len(body) == 0 || body[len(body)-1] != '\n' {
 		_, _ = io.WriteString(w, "\n")
 	}
+}
+
+// terminalWidth is the width of w when it is a terminal, else 0.
+func terminalWidth(w io.Writer) int {
+	f, ok := w.(*os.File)
+	if !ok || !term.IsTerminal(int(f.Fd())) {
+		return 0
+	}
+	if cols, _, err := term.GetSize(int(f.Fd())); err == nil && cols > 0 {
+		return cols
+	}
+	return 80
 }

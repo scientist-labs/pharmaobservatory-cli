@@ -59,14 +59,14 @@ func TestListFlagsReachTheQueryAndBodyIsRaw(t *testing.T) {
 
 func TestUnsetFlagsAreNotSent(t *testing.T) {
 	e := loggedIn(t)
-	if _, err := e.po("cell-lines", "list"); err != nil {
+	if _, err := e.po("cell-lines", "list", "--json"); err != nil {
 		t.Fatal(err)
 	}
 	if got := e.lastSeen(t); got != "/api/v1/cell-lines" {
 		t.Fatalf("request: %s", got)
 	}
 	// a zero value that was explicitly set is sent
-	if _, err := e.po("cell-lines", "list", "--limit", "0", "--facets=false"); err != nil {
+	if _, err := e.po("cell-lines", "list", "--limit", "0", "--facets=false", "--json"); err != nil {
 		t.Fatal(err)
 	}
 	if got := e.lastSeen(t); got != "/api/v1/cell-lines?facets=false&limit=0" {
@@ -105,7 +105,7 @@ func TestGetSectionWithItsOwnFlag(t *testing.T) {
 			t.Fatalf("request: %s", got)
 		}
 	}
-	if _, err := e.po("orgs", "get", "company:42", "identity"); err != nil {
+	if _, err := e.po("orgs", "get", "company:42", "identity", "--json"); err != nil {
 		t.Fatal(err)
 	}
 	if got := e.lastSeen(t); got != "/api/v1/orgs/company:42/identity" {
@@ -121,7 +121,7 @@ func TestCollectionSections(t *testing.T) {
 	if got := e.lastSeen(t); got != "/api/v1/biomarkers/hub_tier_tables" {
 		t.Fatalf("request: %s", got)
 	}
-	if _, err := e.po("cell-lines", "status_counts", "--species", "human"); err != nil {
+	if _, err := e.po("cell-lines", "status_counts", "--species", "human", "--json"); err != nil {
 		t.Fatal(err)
 	}
 	if got := e.lastSeen(t); got != "/api/v1/cell-lines/status_counts?species=human" {
@@ -251,7 +251,7 @@ func TestExpiredTokenRefreshesOnceThroughTheTypedPath(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(rawBody))
 	}
-	out, err := e.po("cell-lines", "list")
+	out, err := e.po("cell-lines", "list", "--json")
 	if err != nil || out != rawBody {
 		t.Fatalf("%v %q", err, out)
 	}
