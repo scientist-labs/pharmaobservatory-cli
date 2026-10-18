@@ -23,6 +23,10 @@
 # of the refresh token itself is not known; the nightly use is what keeps the chain warm, and a break
 # is reported as the failure it is.
 #
+# SETUP GATE. The first step checks that SMOKE_SECRETS_TOKEN is set and every later step is gated on
+# it: without it a refresh would rotate the token with no way to store it and kill the stored
+# credential. Absent, the job skips everything with one message and opens no failure issue.
+#
 # ENVIRONMENT ABSENT. The candidate is not permanent. A DNS or connection failure, or a 503 that is
 # not the application's own error, ends the run as a notice plus a summary naming the cause, and the
 # job is green. A 5xx from a reachable application fails the job.
@@ -55,11 +59,25 @@ jobs:
       PO_CREDENTIAL_STORE: file
       PO_PROFILE: staging
     steps:
+      - name: Gate on SMOKE_SECRETS_TOKEN
+        id: gate
+        env:
+          TOKEN: ${{ secrets.SMOKE_SECRETS_TOKEN }}
+        run: |
+          if [ -n "$TOKEN" ]; then
+            echo "has_token=true" >>"$GITHUB_OUTPUT"
+          else
+            echo "has_token=false" >>"$GITHUB_OUTPUT"
+            echo "::notice title=smoke skipped::SMOKE_SECRETS_TOKEN is not set; skipping so the rotating staging credential is not consumed. Owner step: create a fine-grained PAT for this repo with Secrets read/write and store it as SMOKE_SECRETS_TOKEN."
+          fi
       - uses: actions/checkout@v4
+        if: steps.gate.outputs.has_token == 'true'
       - uses: actions/setup-go@v5
+        if: steps.gate.outputs.has_token == 'true'
         with:
           go-version: stable
       - name: Build from main
+        if: steps.gate.outputs.has_token == 'true'
         run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/clibin"
@@ -67,6 +85,7 @@ jobs:
           test "$(find "$RUNNER_TEMP/clibin" -type f | wc -l)" -eq 1
           echo "CLI=$(find "$RUNNER_TEMP/clibin" -type f)" >>"$GITHUB_ENV"
       - name: Inject the credential into the file store
+        if: steps.gate.outputs.has_token == 'true'
         id: inject
         env:
           SMOKE_STAGING_CREDENTIAL: ${{ secrets.SMOKE_STAGING_CREDENTIAL }}
@@ -84,10 +103,11 @@ jobs:
           echo "PO_CONFIG_DIR=$RUNNER_TEMP/cli-config" >>"$GITHUB_ENV"
           echo "SMOKE_OUT=$RUNNER_TEMP/smoke-out" >>"$GITHUB_ENV"
       - name: Smoke script
+        if: steps.gate.outputs.has_token == 'true'
         id: smoke
         run: bin/smoke
       - name: Write the rotated refresh token back
-        if: always() && steps.inject.outcome == 'success'
+        if: always() && steps.gate.outputs.has_token == 'true' && steps.inject.outcome == 'success'
         env:
           GH_TOKEN: ${{ secrets.SMOKE_SECRETS_TOKEN }}
         run: |
@@ -106,7 +126,7 @@ jobs:
           gh secret set SMOKE_STAGING_CREDENTIAL --repo "$GITHUB_REPOSITORY" <"$cur"
           echo "rotated refresh token written back to SMOKE_STAGING_CREDENTIAL"
       - name: Open or update the one failure issue
-        if: failure()
+        if: failure() && steps.gate.outputs.has_token == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
