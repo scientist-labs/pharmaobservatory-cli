@@ -4,6 +4,13 @@ on:
   pull_request:
   push:
     branches: [main]
+  # Called by regenerate.yml on the regeneration PR's head SHA (see that file's header).
+  workflow_call:
+    inputs:
+      ref:
+        description: Commit to check out; empty means the triggering commit.
+        type: string
+        default: ""
 
 permissions:
   contents: read
@@ -13,6 +20,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
       - uses: actions/setup-go@v5
         with:
           go-version: stable
@@ -31,6 +40,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
       - uses: actions/setup-go@v5
         with:
           go-version: stable
@@ -42,6 +53,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ inputs.ref }}
           fetch-depth: 0
       - uses: actions/setup-go@v5
         with:
