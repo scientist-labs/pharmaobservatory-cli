@@ -8,7 +8,11 @@ import (
 )
 
 // NewRoot builds the root command.
-func NewRoot() *cobra.Command {
+func NewRoot() *cobra.Command { return NewRootWith(defaultDeps()) }
+
+// NewRootWith builds the root command over explicit dependencies (tests).
+func NewRootWith(d Deps) *cobra.Command {
+	g := &globals{}
 	root := &cobra.Command{
 		Use:           "po",
 		Short:         "Pharma Observatory command line client",
@@ -24,6 +28,9 @@ func NewRoot() *cobra.Command {
 		Run: func(cmd *cobra.Command, args []string) { _ = cmd.Help() },
 	}
 	root.SetFlagErrorFunc(func(_ *cobra.Command, err error) error { return apierr.Usage(err) })
-	root.AddCommand(newVersionCmd())
+	root.PersistentFlags().StringVar(&g.profile, "profile", "", "profile to use (default: $PO_PROFILE, config default_profile, then prod)")
+	root.PersistentFlags().StringVar(&g.apiBase, "api-base", "", "send requests here instead of the profile origin (audience unchanged)")
+	root.PersistentFlags().BoolVar(&g.json, "json", false, "print the raw response body")
+	root.AddCommand(newVersionCmd(), newLoginCmd(g, d), newLogoutCmd(g, d), newWhoamiCmd(g, d), newAuthCmd(g, d))
 	return root
 }
