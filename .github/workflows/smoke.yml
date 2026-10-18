@@ -1,0 +1,131 @@
+# Nightly live smoke test of the CLI against the non-production environment (issue #9).
+#
+# What it does: builds the binary from main, puts a refresh-token credential for a dedicated test
+# user into the file credential store (never a keychain), and runs bin/smoke, which drives a fixed
+# script of commands and asserts exit codes and attribution. See the header of bin/smoke for the
+# checks and for what was measured to choose them.
+#
+# THE CREDENTIAL. Login is a browser authorization-code flow with no device code and no client
+# secret, so CI cannot log in. A human (or a headless browser, for this one dedicated account) logs
+# in once with `<cli> login --profile staging`; the resulting credentials.json is the Actions secret
+# SMOKE_STAGING_CREDENTIAL. The account is a dedicated test user in a dedicated, clearly named test
+# organization (recorded on issue #9), never a person's.
+#
+# REFRESH-TOKEN ROTATION, MEASURED 2026-10-18 against this client: every refresh returns a NEW
+# refresh token. The previous token keeps working for a short grace window (it was still accepted
+# seconds after rotation) and is refused (invalid_grant) by the time ~10 minutes have passed. So the
+# rotated token MUST be written back or the chain breaks after one run. The last step writes it back
+# with `gh secret set SMOKE_STAGING_CREDENTIAL`, which needs a token with repository secrets write:
+# GITHUB_TOKEN cannot write secrets, so the secret SMOKE_SECRETS_TOKEN must hold a fine-grained
+# personal access token limited to this one repository with the single permission "Secrets: read and
+# write". If it is missing the run still executes, but the write-back step fails the job loudly (a
+# rotated token that is not stored is a broken chain), and that opens the failure issue. The lifetime
+# of the refresh token itself is not known; the nightly use is what keeps the chain warm, and a break
+# is reported as the failure it is.
+#
+# ENVIRONMENT ABSENT. The candidate is not permanent. A DNS or connection failure, or a 503 that is
+# not the application's own error, ends the run as a notice plus a summary naming the cause, and the
+# job is green. A 5xx from a reachable application fails the job.
+#
+# ONE ISSUE. A failing run opens or updates a single issue labelled smoke-test; it never opens a
+# second one while one is open and never closes it.
+#
+# The binary name is not written here: the build step takes whatever `go build ./cmd/...` produces.
+name: Smoke
+
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+# One run at a time: two runs would each redeem the same refresh token and fork the chain.
+concurrency:
+  group: smoke
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      PO_CREDENTIAL_STORE: file
+      PO_PROFILE: staging
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+      - name: Build from main
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/clibin"
+          go build -o "$RUNNER_TEMP/clibin/" ./cmd/...
+          test "$(find "$RUNNER_TEMP/clibin" -type f | wc -l)" -eq 1
+          echo "CLI=$(find "$RUNNER_TEMP/clibin" -type f)" >>"$GITHUB_ENV"
+      - name: Inject the credential into the file store
+        id: inject
+        env:
+          SMOKE_STAGING_CREDENTIAL: ${{ secrets.SMOKE_STAGING_CREDENTIAL }}
+        run: |
+          set -euo pipefail
+          if [ -z "$SMOKE_STAGING_CREDENTIAL" ]; then
+            echo "::error title=no credential::the secret SMOKE_STAGING_CREDENTIAL is not set"
+            exit 1
+          fi
+          umask 077
+          mkdir -p "$RUNNER_TEMP/cli-config"
+          printf '%s' "$SMOKE_STAGING_CREDENTIAL" >"$RUNNER_TEMP/cli-config/credentials.json"
+          cp "$RUNNER_TEMP/cli-config/credentials.json" "$RUNNER_TEMP/credentials.orig.json"
+          jq -e --arg p "$PO_PROFILE" '.[$p].refresh_token | length > 0' "$RUNNER_TEMP/credentials.orig.json" >/dev/null
+          echo "PO_CONFIG_DIR=$RUNNER_TEMP/cli-config" >>"$GITHUB_ENV"
+          echo "SMOKE_OUT=$RUNNER_TEMP/smoke-out" >>"$GITHUB_ENV"
+      - name: Smoke script
+        id: smoke
+        run: bin/smoke
+      - name: Write the rotated refresh token back
+        if: always() && steps.inject.outcome == 'success'
+        env:
+          GH_TOKEN: ${{ secrets.SMOKE_SECRETS_TOKEN }}
+        run: |
+          set -euo pipefail
+          cur="$PO_CONFIG_DIR/credentials.json"
+          old="$(jq -r --arg p "$PO_PROFILE" '.[$p].refresh_token' "$RUNNER_TEMP/credentials.orig.json")"
+          new="$(jq -r --arg p "$PO_PROFILE" '.[$p].refresh_token // empty' "$cur")"
+          if [ -z "$new" ] || [ "$new" = "$old" ]; then
+            echo "refresh token unchanged; nothing to write back"
+            exit 0
+          fi
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::error title=rotated token not stored::the refresh token rotated but the secret SMOKE_SECRETS_TOKEN (a fine-grained token with Secrets: write on this repository) is not set; the next run will fail with invalid_grant"
+            exit 1
+          fi
+          gh secret set SMOKE_STAGING_CREDENTIAL --repo "$GITHUB_REPOSITORY" <"$cur"
+          echo "rotated refresh token written back to SMOKE_STAGING_CREDENTIAL"
+      - name: Open or update the one failure issue
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          run_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          detail="${SMOKE_OUT:-/nonexistent}/failure.md"
+          {
+            echo "The nightly smoke test failed: $run_url"
+            echo
+            if [ -s "$detail" ]; then
+              cat "$detail"
+            else
+              echo "No command failed inside the smoke script; an earlier or later step failed (build, credential injection, or the token write-back). See the run for the failing step."
+            fi
+          } >"$RUNNER_TEMP/issue-body.md"
+          gh label create smoke-test --color BFD4F2 --description "Nightly smoke test failures" --force >/dev/null
+          existing="$(gh issue list --state open --label smoke-test --json number --jq '.[0].number // empty')"
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --body-file "$RUNNER_TEMP/issue-body.md"
+          else
+            gh issue create --label smoke-test --title "Nightly smoke test is failing" --body-file "$RUNNER_TEMP/issue-body.md"
+          fi

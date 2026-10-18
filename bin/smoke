@@ -1,0 +1,278 @@
+#!/usr/bin/env bash
+# Live smoke test of the CLI against the non-production environment (issue #9).
+#
+# Unit tests run against recorded fixtures; this runs the real binary against the real server, in a
+# fixed order, and asserts each command's exit code and, wherever the response declares attribution,
+# that the attribution is printed. It is driven by .github/workflows/smoke.yml but runs the same way
+# on a laptop:
+#
+#   CLI=/path/to/built/binary PO_CONFIG_DIR=<dir holding credentials.json> \
+#     PO_CREDENTIAL_STORE=file PO_PROFILE=staging bin/smoke
+#
+# The binary name is deliberately never written here: the caller passes the path in $CLI.
+#
+# Outcomes, written to $SMOKE_OUT/outcome and to $GITHUB_OUTPUT as `outcome`:
+#   ok      every check passed (exit 0)
+#   absent  the environment is not there: DNS or connection failure, or a 503 that is not the
+#           application's own error (a 503 `no_identity_provider`, or an ingress 503 with no
+#           application body). Exit 0 and a message naming the cause. A 5xx from a reachable
+#           application is a FAILURE, never absent.
+#   failed  a check failed (exit 1); $SMOKE_OUT/failure.md names the command and the server body.
+#
+# Facts measured on the candidate on 2026-10-18 that the checks below rest on:
+#   - there is no RateLimit-* response header (checked on a 200 for a list route); the quota surface
+#     is a 429 with {"error":"quota_exceeded","budget":{...}} and Retry-After, so that is what the
+#     quota check drives. The test account carries a low per-minute limit (set by an operator) so the
+#     run can reach it; the check is skipped, with a notice, if the limit has been raised.
+#   - a staging token sent to the PRODUCTION origin answers 401 invalid_token (the issuer is unknown
+#     there), not invalid_audience. The live invalid_audience is produced by sending the same token
+#     to a different mount on the candidate (`api /mcp/v1`), which the server answers with
+#     {"error":"invalid_audience"} and the CLI maps to exit 3.
+set -uo pipefail
+
+: "${CLI:?set CLI to the built binary}"
+: "${PO_PROFILE:=staging}"
+export PO_PROFILE
+ORIGIN="${SMOKE_ORIGIN:-https://candidate.pharmaobservatory.com}"
+PROD_ORIGIN="${SMOKE_PROD_ORIGIN:-https://pharmaobservatory.com}"
+OUT="${SMOKE_OUT:-$(mktemp -d)}"
+mkdir -p "$OUT"
+STEP=0
+LAST_RC=""
+LAST_OUT=/dev/null
+LAST_ERR=/dev/null
+LAST_CMD=""
+ATTR_COUNT=0
+
+emit_outcome() {
+  echo "outcome=$1" >>"${GITHUB_OUTPUT:-/dev/null}"
+  echo "$1" >"$OUT/outcome"
+}
+
+summary() { echo "$*" >>"${GITHUB_STEP_SUMMARY:-/dev/null}"; }
+
+# Redact anything shaped like a JWT or a long opaque token before it reaches a log or an issue.
+redact() { sed -E 's/eyJ[A-Za-z0-9_-]{20,}(\.[A-Za-z0-9_-]+)*/<redacted>/g; s/(refresh_token|access_token)"?[=: ]+"?[A-Za-z0-9_.-]{12,}/\1=<redacted>/g'; }
+
+# probe_origin prints "up", or "absent: <cause>".
+probe_origin() {
+  local body code rc
+  body="$(mktemp)"
+  code="$(curl -sS --max-time 20 -o "$body" -w '%{http_code}' "$ORIGIN/api/v1/whoami" 2>"$body.err")"
+  rc=$?
+  if [ "$rc" -ne 0 ]; then
+    case "$rc" in
+      6) echo "absent: DNS failure for the origin (curl exit 6)" ;;
+      7) echo "absent: connection refused (curl exit 7)" ;;
+      28) echo "absent: connection timed out (curl exit 28)" ;;
+      35 | 51 | 58 | 60) echo "absent: TLS failure (curl exit $rc)" ;;
+      *) echo "absent: transport failure (curl exit $rc)" ;;
+    esac
+    return
+  fi
+  if [ "$code" = 503 ]; then
+    if jq -e '.error == "no_identity_provider"' "$body" >/dev/null 2>&1; then
+      echo "absent: HTTP 503 no_identity_provider"
+    elif ! jq -e 'type == "object" and has("error")' "$body" >/dev/null 2>&1; then
+      echo "absent: HTTP 503 from the ingress with no application body"
+    else
+      echo "up"
+    fi
+    return
+  fi
+  echo "up"
+}
+
+# fail <command words> <message>: record the failing command and the server's body, then stop.
+fail() {
+  local cmd="$1" msg="$2"
+  {
+    echo "Command: \`<cli> $cmd\`"
+    echo "Check: $msg"
+    echo "Exit code: ${LAST_RC:-unknown}"
+    echo
+    echo "Server error body or stdout (first 1500 bytes, redacted):"
+    echo '```'
+    head -c 1500 "$LAST_OUT" 2>/dev/null | redact
+    echo
+    echo '```'
+    echo "stderr (first 1500 bytes, redacted):"
+    echo '```'
+    head -c 1500 "$LAST_ERR" 2>/dev/null | redact
+    echo
+    echo '```'
+  } >"$OUT/failure.md"
+  echo "::error title=smoke check failed::<cli> $cmd: $msg (exit ${LAST_RC:-?})"
+  cat "$OUT/failure.md"
+  summary "### Smoke test FAILED"
+  summary "\`<cli> $cmd\`: $msg (exit ${LAST_RC:-?})"
+  emit_outcome failed
+  exit 1
+}
+
+absent() {
+  local why="${1#absent: }"
+  echo "::notice title=environment absent::$why. The smoke test is skipped, not failed."
+  summary "### Smoke test skipped: environment absent"
+  summary "$why"
+  emit_outcome absent
+  exit 0
+}
+
+# run <expected exit> <args...>: runs the CLI, keeps stdout/stderr in $LAST_OUT/$LAST_ERR. A transport
+# failure (exit 7) is re-probed: if the environment has gone away the run ends as absent.
+run() {
+  local want="$1" state
+  shift
+  STEP=$((STEP + 1))
+  LAST_OUT="$OUT/step$STEP.out"
+  LAST_ERR="$OUT/step$STEP.err"
+  LAST_CMD="$*"
+  "$CLI" "$@" >"$LAST_OUT" 2>"$LAST_ERR"
+  LAST_RC=$?
+  echo "step $STEP: <cli> $* -> exit $LAST_RC"
+  if [ "$LAST_RC" -eq 7 ] && [ "$want" != 7 ]; then
+    state="$(probe_origin)"
+    if [ "$state" != up ]; then
+      absent "$state"
+    fi
+  fi
+  if [ "$LAST_RC" -ne "$want" ]; then
+    fail "$LAST_CMD" "expected exit $want"
+  fi
+  # A decode warning from the generated SDK is a defect worth seeing but not a failure (the CLI
+  # prints the raw body and exits 0).
+  if grep -q '^warning:' "$LAST_ERR"; then
+    echo "::warning title=SDK warning::<cli> $LAST_CMD: $(grep -m1 '^warning:' "$LAST_ERR" | cut -c1-300)"
+  fi
+}
+
+# names_in <json file>: the attribution names the response declares, one per line.
+names_in() { jq -r '(.attribution // [])[]?.name' "$1"; }
+
+# assert_attribution <file holding the JSON envelope> <file to search> <label>
+assert_attribution() {
+  local envelope="$1" haystack="$2" label="$3" name n=0
+  while IFS= read -r name; do
+    [ -z "$name" ] && continue
+    n=$((n + 1))
+    if ! grep -qF -- "$name" "$haystack"; then
+      fail "$LAST_CMD" "$label: attribution \"$name\" is declared by the response but not printed"
+    fi
+  done < <(names_in "$envelope")
+  echo "  attribution: $n declared, all printed ($label)"
+  ATTR_COUNT="$n"
+}
+
+# --- 0. the environment is there ---------------------------------------------------------------
+state="$(probe_origin)"
+if [ "$state" != up ]; then
+  absent "$state"
+fi
+
+# --- 1. whoami ---------------------------------------------------------------------------------
+run 0 whoami
+grep -q '^sub:' "$LAST_OUT" || fail "$LAST_CMD" "no sub line in the output"
+grep -Eq '^roles:.*:api($|,)' "$LAST_OUT" || fail "$LAST_CMD" "the test account does not hold the API role"
+grep -Eq '^roles:.*:restricted:licensable($|,)' "$LAST_OUT" ||
+  fail "$LAST_CMD" "the test account does not hold the licensable data tier"
+
+# --- 2. live refusals, while the access token from step 1 is still fresh (no refresh needed) ----
+# 2a. the audience refusal: the staging API token sent to another mount.
+run 3 api /mcp/v1 --json
+jq -e '.error == "invalid_audience"' "$LAST_OUT" >/dev/null || fail "$LAST_CMD" "server body is not invalid_audience"
+grep -q 'invalid_audience' "$LAST_ERR" || fail "$LAST_CMD" "the CLI message does not name invalid_audience"
+# 2b. the staging token sent to the production origin must be refused with the auth exit code.
+run 3 --api-base "$PROD_ORIGIN" whoami --json
+echo "  production origin answered: $(head -c 120 "$LAST_OUT")"
+
+# --- 3. a list, --limit 5 --json ---------------------------------------------------------------
+run 0 --wait biomarkers list --limit 5 --json
+LIST_JSON="$LAST_OUT"
+jq -e '(.rows | length) == 5 and (.columns | length) > 0 and .pagination.limit == 5' "$LIST_JSON" >/dev/null ||
+  fail "$LAST_CMD" "expected exactly 5 rows, columns and pagination.limit 5"
+jq -e '(.attribution | length) > 0' "$LIST_JSON" >/dev/null || fail "$LAST_CMD" "the list declares no attribution"
+ID="$(jq -r '.rows[0].route_key' "$LIST_JSON")"
+[ -n "$ID" ] && [ "$ID" != null ] || fail "$LAST_CMD" "first row has no route_key"
+
+# --- 4. get <id> -------------------------------------------------------------------------------
+run 0 --wait biomarkers get "$ID" --json
+GET_JSON="$LAST_OUT"
+jq -e '.id != null or .identity != null' "$GET_JSON" >/dev/null || fail "$LAST_CMD" "the record has no identity"
+run 0 --wait biomarkers get "$ID"
+[ -s "$LAST_OUT" ] || fail "$LAST_CMD" "empty table output"
+assert_attribution "$GET_JSON" "$LAST_ERR" "get table footer"
+[ "$ATTR_COUNT" -gt 0 ] || fail "$LAST_CMD" "the record declares no attribution"
+
+# --- 5. get <id> <section> --csv ---------------------------------------------------------------
+run 0 --wait biomarkers get "$ID" identity --csv
+head -n1 "$LAST_OUT" | grep -q '^key,label,value' || fail "$LAST_CMD" "csv header is not key,label,value"
+[ "$(wc -l <"$LAST_OUT")" -gt 3 ] || fail "$LAST_CMD" "csv has no data rows"
+assert_attribution "$GET_JSON" "$LAST_ERR" "csv footer"
+assert_attribution "$GET_JSON" "$LAST_OUT" "csv source comments"
+
+# --- 6. a collection section in the default table, on a section that carries licensed data ------
+run 0 --wait orgs list --json
+ORG_IDS="$(jq -r '.rows[:5][].id' "$LAST_OUT")"
+FOUND=""
+SECTION_JSON=""
+for oid in $ORG_IDS; do
+  run 0 --wait orgs get "$oid" benzinga_catalysts --json
+  if jq -e '([.attribution[]? | select((.license // "") | test("icensed"))] | length) > 0 and (.rows | length) > 0' "$LAST_OUT" >/dev/null; then
+    SECTION_JSON="$LAST_OUT"
+    FOUND="$oid"
+    break
+  fi
+done
+[ -n "$FOUND" ] || fail "$LAST_CMD" "none of the first 5 organizations has a licensed collection section with rows"
+run 0 --wait orgs get "$FOUND" benzinga_catalysts
+[ "$(wc -l <"$LAST_OUT")" -ge 2 ] || fail "$LAST_CMD" "table has no header plus a row"
+head -n1 "$LAST_OUT" | grep -q "$(printf '\t')" || fail "$LAST_CMD" "table header is not tab separated"
+assert_attribution "$SECTION_JSON" "$LAST_ERR" "licensed section footer"
+grep -q 'icensed' "$LAST_ERR" || fail "$LAST_CMD" "the licence text is not printed in the footer"
+
+# --- 7. --all on a small list ------------------------------------------------------------------
+run 0 --wait biomarkers list --q ERBB2 --limit 50 --all
+if ! grep -Eq 'fetched [0-9]+ rows; total [0-9]+' "$LAST_ERR"; then
+  fail "$LAST_CMD" "no 'fetched N rows; total M' line in the footer"
+fi
+fetched="$(sed -En 's/.*fetched ([0-9]+) rows; total ([0-9]+).*/\1/p' "$LAST_ERR" | head -1)"
+total="$(sed -En 's/.*fetched ([0-9]+) rows; total ([0-9]+).*/\2/p' "$LAST_ERR" | head -1)"
+[ "$fetched" = "$total" ] || fail "$LAST_CMD" "fetched $fetched rows but the server's total is $total"
+[ "$fetched" -gt 50 ] || fail "$LAST_CMD" "--all fetched $fetched rows: the list fits one page, so paging is not exercised"
+# A cell may hold a newline, so lines can exceed rows; fewer lines than rows plus a header is a loss.
+[ "$(wc -l <"$LAST_OUT")" -ge "$((fetched + 1))" ] || fail "$LAST_CMD" "table has $(wc -l <"$LAST_OUT") lines for $fetched rows and a header"
+[ "$fetched" -le 500 ] || echo "::warning title=list grew::--all on a supposedly small list fetched $fetched rows"
+assert_attribution "$LIST_JSON" "$LAST_ERR" "--all footer"
+
+# --- 8. quota: drive the per-minute bucket to 429, then read it ---------------------------------
+# No RateLimit-* header is exposed (see the header), so the surface asserted is the 429 itself.
+hit=""
+for i in $(seq 1 80); do
+  qout="$OUT/quota.$i"
+  "$CLI" cell-lines status_counts --json >"$qout.out" 2>"$qout.err"
+  rc=$?
+  LAST_RC=$rc
+  LAST_OUT="$qout.out"
+  LAST_ERR="$qout.err"
+  LAST_CMD="cell-lines status_counts --json (call $i of a burst)"
+  if [ "$rc" -eq 6 ]; then
+    hit="$i"
+    break
+  fi
+  [ "$rc" -eq 0 ] || fail "$LAST_CMD" "expected exit 0 or 6"
+done
+if [ -z "$hit" ]; then
+  echo "::notice title=quota not reached::80 calls did not reach a 429; the test account's per-minute limit may have been raised"
+  summary "Quota check skipped: 80 calls did not reach a 429."
+else
+  echo "quota burst reached 429 at call $hit"
+  jq -e '.error == "quota_exceeded" and (.budget | type) == "object"' "$LAST_OUT" >/dev/null ||
+    fail "$LAST_CMD" "the 429 body is not quota_exceeded with a budget object"
+  grep -Eq 'try again in [0-9]+' "$LAST_ERR" || fail "$LAST_CMD" "the CLI message does not say when to retry"
+fi
+
+summary "### Smoke test passed"
+summary "$STEP commands checked against $ORIGIN; the quota burst reached 429: ${hit:+yes, at call $hit}${hit:-no}."
+emit_outcome ok
+echo "smoke: ok"
