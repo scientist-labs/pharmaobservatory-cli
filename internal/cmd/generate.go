@@ -1,3 +1,3 @@
 package cmd
 
-//go:generate go run ../gen
+//go:generate go run ../gen -out pages

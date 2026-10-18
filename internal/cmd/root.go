@@ -5,6 +5,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/scientist-labs/pharmaobservatory-cli/internal/apierr"
+	"github.com/scientist-labs/pharmaobservatory-cli/internal/cmd/pages"
 )
 
 // NewRoot builds the root command.
@@ -31,6 +32,7 @@ func NewRootWith(d Deps) *cobra.Command {
 	root.PersistentFlags().StringVar(&g.profile, "profile", "", "profile to use (default: $PO_PROFILE, config default_profile, then prod)")
 	root.PersistentFlags().StringVar(&g.apiBase, "api-base", "", "send requests here instead of the profile origin (audience unchanged)")
 	root.PersistentFlags().BoolVar(&g.json, "json", false, "print the raw response body")
-	root.AddCommand(newVersionCmd(), newLoginCmd(g, d), newLogoutCmd(g, d), newWhoamiCmd(g, d), newAuthCmd(g, d))
+	root.AddCommand(newVersionCmd(), newLoginCmd(g, d), newLogoutCmd(g, d), newWhoamiCmd(g, d), newAuthCmd(g, d), newAPICmd(g, d))
+	root.AddCommand(pages.Build(pageEnv(g, d))...)
 	return root
 }
