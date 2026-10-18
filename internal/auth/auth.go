@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/scientist-labs/pharmaobservatory-cli/internal/sanitize"
 	"io"
 	"net"
 	"net/http"
@@ -169,8 +170,8 @@ func AuthorizeURL(p AuthorizeParams) string {
 // CallbackError is an error reported on the redirect.
 func callbackErr(q url.Values) error {
 	if e := q.Get("error"); e != "" {
-		msg := "authorization failed: " + apierr.Sanitize(e)
-		if d := apierr.Sanitize(q.Get("error_description")); d != "" {
+		msg := "authorization failed: " + sanitize.Line(e)
+		if d := sanitize.Line(q.Get("error_description")); d != "" {
 			msg += " (" + d + ")"
 		}
 		return apierr.Auth("%s", msg)
@@ -296,9 +297,9 @@ func postToken(ctx context.Context, hc *http.Client, endpoint string, form url.V
 		}
 		msg := fmt.Sprintf("token request refused: HTTP %d", resp.StatusCode)
 		if tr.Error != "" {
-			msg += " " + apierr.Sanitize(tr.Error)
+			msg += " " + sanitize.Line(tr.Error)
 		}
-		if d := apierr.Sanitize(tr.Description); d != "" {
+		if d := sanitize.Line(tr.Description); d != "" {
 			msg += " (" + d + ")"
 		}
 		return tr, apierr.Auth("%s", msg)

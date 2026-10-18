@@ -3,22 +3,11 @@ package apierr
 import (
 	"errors"
 	"fmt"
+	"github.com/scientist-labs/pharmaobservatory-cli/internal/sanitize"
 	"net/http"
 	"net/url"
 	"strings"
-	"unicode"
 )
-
-// Sanitize removes control characters (ANSI escapes included, C0, DEL and C1) from text a
-// server supplied before it reaches the terminal. Printable text is kept as is.
-func Sanitize(s string) string {
-	return strings.Map(func(r rune) rune {
-		if unicode.IsControl(r) {
-			return -1
-		}
-		return r
-	}, s)
-}
 
 // isLoopbackHost reports whether host is one of the loopback literals http is allowed for.
 func isLoopbackHost(host string) bool {
@@ -35,7 +24,7 @@ func isLoopbackHost(host string) bool {
 func RequireSecure(what, raw string) error {
 	u, err := url.Parse(raw)
 	if err != nil || u.Host == "" {
-		return Usage(fmt.Errorf("refusing the %s %q: it is not a valid absolute URL", what, Sanitize(raw)))
+		return Usage(fmt.Errorf("refusing the %s %q: it is not a valid absolute URL", what, sanitize.Line(raw)))
 	}
 	switch strings.ToLower(u.Scheme) {
 	case "https":
@@ -45,7 +34,7 @@ func RequireSecure(what, raw string) error {
 			return nil
 		}
 	}
-	return Usage(fmt.Errorf("refusing the %s %s: it must be https (http is only allowed for 127.0.0.1, ::1 or localhost)", what, Sanitize(raw)))
+	return Usage(fmt.Errorf("refusing the %s %s: it must be https (http is only allowed for 127.0.0.1, ::1 or localhost)", what, sanitize.Line(raw)))
 }
 
 // MaxRedirects is the hop limit, the same as the Go default.
@@ -59,7 +48,7 @@ func SecureRedirect(req *http.Request, via []*http.Request) error {
 		return Usage(fmt.Errorf("stopped after %d redirects", MaxRedirects))
 	}
 	if err := RequireSecure("redirect target", req.URL.String()); err != nil {
-		return Usage(fmt.Errorf("refusing to follow a redirect from %s: %w", Sanitize(via[len(via)-1].URL.Redacted()), err))
+		return Usage(fmt.Errorf("refusing to follow a redirect from %s: %w", sanitize.Line(via[len(via)-1].URL.Redacted()), err))
 	}
 	return nil
 }

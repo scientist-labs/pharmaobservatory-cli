@@ -430,12 +430,12 @@ func TestServerErrorDescriptionIsSanitized(t *testing.T) {
 	defer srv.Close()
 	c := Client{HC: srv.Client(), Token: srv.URL, ClientID: "c", Resource: "r"}
 	_, err := c.Refresh(context.Background(), "rt")
-	if err == nil || strings.ContainsAny(err.Error(), "\x1b\x07\n") || !strings.Contains(err.Error(), "gone[31m RED]0;pwnsecond") {
+	if err == nil || strings.ContainsAny(err.Error(), "\x1b\x07\n") || !strings.Contains(err.Error(), "gone RED second") {
 		t.Fatalf("%q", err)
 	}
 	q := url.Values{"error": {"access_denied"}, "error_description": {"no\x1b[2J way"}}
 	_, err = CodeFromQuery(q, "s")
-	if err == nil || strings.Contains(err.Error(), "\x1b") || !strings.Contains(err.Error(), "no[2J way") {
+	if err == nil || strings.Contains(err.Error(), "\x1b") || !strings.Contains(err.Error(), "no way") {
 		t.Fatalf("%q", err)
 	}
 }

@@ -7,6 +7,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/scientist-labs/pharmaobservatory-cli/internal/sanitize"
+	"math"
 	"net/http"
 	"strings"
 	"time"
@@ -129,7 +131,7 @@ func fixed(s string) func(*body, string) string { return func(*body, string) str
 // them.
 func serverMsg(word, fallback string) func(*body, string) string {
 	return func(b *body, _ string) string {
-		m := Sanitize(b.Message)
+		m := sanitize.Line(b.Message)
 		if m == "" {
 			m = fallback
 		}
@@ -138,7 +140,7 @@ func serverMsg(word, fallback string) func(*body, string) string {
 			if l, ok := b.Lists[k].([]any); ok && len(l) > 0 {
 				var names []string
 				for _, v := range l {
-					names = append(names, Sanitize(fmt.Sprint(v)))
+					names = append(names, sanitize.Line(fmt.Sprint(v)))
 				}
 				out += "; valid: " + strings.Join(names, ", ")
 			}
@@ -165,7 +167,7 @@ var refusals = map[string]refusal{
 		if b.Role == "" {
 			return "your organization lacks a role the API requires (missing_role); ask your organization admin"
 		}
-		return "your organization lacks the role " + Sanitize(b.Role) + " (missing_role); ask your organization admin"
+		return "your organization lacks the role " + sanitize.Line(b.Role) + " (missing_role); ask your organization admin"
 	}},
 	"not_entitled": {ExitForbidden, func(b *body, _ string) string {
 		return "not entitled to this section (not_entitled)" + creditSuffix(b.License, b.Attribution)
@@ -202,7 +204,7 @@ func FromResponse(status int, h http.Header, raw []byte, profile string) error {
 	if status >= 500 {
 		return Unavailable("the server answered HTTP %d", status)
 	}
-	text := Sanitize(string(raw))
+	text := sanitize.Line(string(raw))
 	if r := []rune(text); len(r) > 300 {
 		text = string(r[:300])
 	}
@@ -214,9 +216,16 @@ func retryAfter(h http.Header) (time.Duration, bool) {
 	if h == nil {
 		return 0, false
 	}
-	var n int
+	var n int64
 	if _, err := fmt.Sscanf(strings.TrimSpace(h.Get("Retry-After")), "%d", &n); err != nil || n < 0 {
 		return 0, false
+	}
+	if n > int64(MaxWait/time.Second) {
+		// Bound before multiplying: n * time.Second wraps negative past about 9.2e9, and a negative
+		// delay would pass the cap check. Over the cap, saturate rather than multiply.
+		if n > math.MaxInt64/int64(time.Second) {
+			return time.Duration(math.MaxInt64), true
+		}
 	}
 	return time.Duration(n) * time.Second, true
 }
@@ -228,12 +237,22 @@ func RetryDelay(h http.Header) (time.Duration, bool) {
 	return d, ok && d <= MaxWait
 }
 
+// windowPhrase renders the server's window label naturally: "1 minute" and "24 hours" read "per 1
+// minute" and "per 24 hours", while "per request" (a depth refusal) already carries its preposition
+// and is used as sent, never "per per request".
+func windowPhrase(label string) string {
+	if strings.HasPrefix(label, "per ") {
+		return label
+	}
+	return "per " + label
+}
+
 func rateLimited(b *body, h http.Header) error {
 	ra, has := retryAfter(h)
 	bk := b.Budget
 	str := func(k string) string {
 		if v, ok := bk[k]; ok && v != nil {
-			return Sanitize(fmt.Sprint(v))
+			return sanitize.Line(fmt.Sprint(v))
 		}
 		return ""
 	}
@@ -248,7 +267,7 @@ func rateLimited(b *body, h http.Header) error {
 			p += " " + u
 		}
 		if w := str("window"); w != "" {
-			p += " per " + w
+			p += " " + windowPhrase(w)
 		}
 		parts = append(parts, p)
 	}
@@ -271,7 +290,7 @@ func rateLimited(b *body, h http.Header) error {
 	if at := str("resets_at"); at != "" {
 		msg += "; resets at " + at
 	}
-	secs := int(ra / time.Second)
+	secs := int64(ra / time.Second)
 	if ra > MaxWait {
 		msg += fmt.Sprintf("; try again in %ds (that is longer than --wait will sleep, %s)", secs, MaxWait)
 	} else {
@@ -285,19 +304,19 @@ func rateLimited(b *body, h http.Header) error {
 func creditSuffix(license string, attribution any) string {
 	var parts []string
 	if license != "" {
-		parts = append(parts, "license: "+license)
+		parts = append(parts, "license: "+sanitize.Line(license))
 	}
 	switch a := attribution.(type) {
 	case string:
 		if a != "" {
-			parts = append(parts, "attribution: "+a)
+			parts = append(parts, "attribution: "+sanitize.Line(a))
 		}
 	case []any:
 		for _, e := range a {
 			if m, ok := e.(map[string]any); ok {
 				name, _ := m["name"].(string)
 				href, _ := m["href"].(string)
-				parts = append(parts, "attribution: "+strings.TrimSpace(name+" "+href))
+				parts = append(parts, "attribution: "+sanitize.Line(strings.TrimSpace(name+" "+href)))
 			}
 		}
 	}
