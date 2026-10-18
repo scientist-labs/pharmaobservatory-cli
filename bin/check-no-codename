@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# Owner rule: nothing in this repo may mention the internal project codename, in a file name or in
+# a file's contents. A plain case-insensitive literal match over every tracked or untracked
+# (non-ignored) file, no exceptions list. The needle is assembled from two halves so this file does
+# not match itself.
+#
+# Not covered, deliberately: git history and commit messages, and files git ignores.
+set -euo pipefail
+cd "$(git rev-parse --show-toplevel)"
+needle="sub""strate"
+status=0
+names="$(git ls-files -co --exclude-standard | grep -i -- "$needle" || true)"
+if [ -n "$names" ]; then
+  echo "file name contains the internal codename:" >&2; echo "$names" >&2; status=1
+fi
+contents="$(git ls-files -co --exclude-standard -z | xargs -0 grep -naiF -- "$needle" || true)"
+if [ -n "$contents" ]; then
+  echo "file contents contain the internal codename:" >&2; echo "$contents" | cut -c1-200 >&2; status=1
+fi
+[ "$status" = 0 ] && echo "ok: no reference to the internal codename in $(git ls-files -co --exclude-standard | wc -l | tr -d ' ') files"
+exit "$status"
