@@ -365,3 +365,21 @@ func TestQueryNotLoggedInIsAuth(t *testing.T) {
 		t.Fatalf("exit %d: %v", apierr.ExitCode(err), err)
 	}
 }
+
+func TestQueryAllRepeatedCursorWithEscapesLeavesStderrClean(t *testing.T) {
+	e := loggedIn(t)
+	e.api = func(w http.ResponseWriter, _ *http.Request) {
+		// every answer, the POST and each result page, names the same escape-laden cursor
+		_, _ = w.Write([]byte(strings.Replace(resultBody("NEXT", `[["x",1]]`), `"NEXT"`, `"c\u001b[2J\u0007"`, 1)))
+	}
+	_, err := e.po("query", "SELECT 1 FROM biomarkers", "--all")
+	if apierr.ExitCode(err) != apierr.ExitPartial || !strings.Contains(err.Error(), "already fetched (c)") {
+		t.Fatalf("exit %d err %q", apierr.ExitCode(err), err)
+	}
+	if strings.ContainsAny(e.errBuf.String()+err.Error(), "\x1b\x07") {
+		t.Fatalf("control text reached stderr: %q / %q", e.errBuf.String(), err)
+	}
+	if !strings.Contains(e.errBuf.String(), "Error: partial result") {
+		t.Fatalf("cobra's error line is not in the captured stderr: %q", e.errBuf.String())
+	}
+}

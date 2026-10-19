@@ -188,7 +188,7 @@ func (q *queryRun) run(args []string) error {
 	for g.all && last.next() != "" {
 		next := last.next()
 		if seen[next] {
-			partial = "the server returned a cursor that was already fetched (" + next + "), so the walk would never end"
+			partial = "the server returned a cursor that was already fetched (" + sanitize.Line(next) + "), so the walk would never end"
 			break
 		}
 		if pagesFetched >= pages.MaxPages {
