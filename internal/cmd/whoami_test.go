@@ -123,3 +123,67 @@ func TestWhoamiSanitizesEveryServerValue(t *testing.T) {
 		t.Fatalf("%q", out)
 	}
 }
+
+// A bucket whose value is not an object, under an escape-laden key, renders a placeholder; nothing
+// the server sent reaches the terminal or the error line raw.
+func TestWhoamiNonObjectBucketUnderAHostileKey(t *testing.T) {
+	key := `\u001b[31m\u001b]8;;http://x\u0007K\u0000\u202e\nFAKE: line`
+	e := whoamiEnv(t, `{"sub":"u","quota":{"keyed_by":"user","buckets":{"`+key+`":5,"":{"remaining":1,"limit":2}}}}`)
+	out, err := e.run("whoami", "--profile", "local")
+	if err != nil {
+		t.Fatalf("a non-object bucket must not fail the command: %v", err)
+	}
+	if strings.ContainsAny(out, "\x1b\x07\x00\u202e") || strings.Contains(out, "\nFAKE") {
+		t.Fatalf("server text reached the terminal: %q", out)
+	}
+	if !strings.Contains(out, "K FAKE: line  (not provided)\n") || !strings.Contains(out, "  (unnamed)") || !strings.Contains(out, "1 of 2 left") {
+		t.Fatalf("%q", out)
+	}
+}
+
+// Fields of an unexpected type render placeholders instead of failing.
+func TestWhoamiWrongTypesRenderPlaceholders(t *testing.T) {
+	cases := map[string]struct {
+		body string
+		want []string
+	}{
+		"organization, plan, roles and quota as strings": {
+			`{"sub":"u","organization":"Example","plan":"pro","roles":"admin","quota":"lots"}`,
+			[]string{"org:     (not provided)\n", "plan:    (not provided)\n", "roles:   (not provided)\n", "quota:   (not reported)\n"},
+		},
+		"buckets as an array": {
+			`{"sub":"u","quota":{"keyed_by":"user","buckets":[1,2]}}`,
+			[]string{"quota:   (not reported)\n"},
+		},
+		"sub, name and email as objects or numbers": {
+			`{"sub":7,"name":{"first":"Ada"},"email":["a@example.test"]}`,
+			[]string{"sub:     7\n", "name:    {\"first\":\"Ada\"}\n", "email:   [\"a@example.test\"]\n"},
+		},
+	}
+	for name, c := range cases {
+		e := whoamiEnv(t, c.body)
+		out, err := e.run("whoami", "--profile", "local")
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		for _, w := range c.want {
+			if !strings.Contains(out, w) {
+				t.Errorf("%s: missing %q in\n%s", name, w, out)
+			}
+		}
+	}
+}
+
+// A body that is not a JSON object, or not JSON at all, is an error that names no server text.
+func TestWhoamiUnreadableBodyErrorIsClean(t *testing.T) {
+	for _, body := range []string{"[1,2]", `"just a string"`, "\u202e\x1b[2Jnot json", `{"sub":"u",` + "\u202e" + `}`} {
+		e := whoamiEnv(t, body)
+		_, err := e.run("whoami", "--profile", "local")
+		if err == nil || !strings.HasPrefix(err.Error(), "whoami: unreadable response") {
+			t.Fatalf("%q: %v", body, err)
+		}
+		if strings.ContainsAny(err.Error(), "\x1b\u202e\n") {
+			t.Fatalf("%q: server text in the error: %q", body, err)
+		}
+	}
+}

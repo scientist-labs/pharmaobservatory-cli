@@ -8,6 +8,7 @@ import (
 	"io"
 	"sort"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/scientist-labs/pharmaobservatory-cli/internal/output"
 	"github.com/scientist-labs/pharmaobservatory-cli/internal/sanitize"
@@ -59,19 +60,28 @@ const (
 	noneQuota = "(not reported)"
 )
 
-// whoamiBody is GET /api/v1/whoami (#5082). Fields are loose (any) where the document leaves them
-// untyped or nullable, so a null or an unexpected type renders as a placeholder instead of failing.
-type whoamiBody struct {
-	Sub          any            `json:"sub"`
-	Roles        []any          `json:"roles"`
-	Name         any            `json:"name"`
-	Email        any            `json:"email"`
-	Organization map[string]any `json:"organization"`
-	Plan         map[string]any `json:"plan"`
-	Quota        *struct {
-		KeyedBy any                       `json:"keyed_by"`
-		Buckets map[string]map[string]any `json:"buckets"`
-	} `json:"quota"`
+// whoamiBody reads GET /api/v1/whoami (#5082) into generic JSON (objects, arrays, json.Number),
+// so a field that is null, missing or of an unexpected type renders as a placeholder instead of
+// failing, and no decode error can name a key or value the server sent.
+func whoamiBody(body []byte) (map[string]any, error) {
+	dec := json.NewDecoder(bytes.NewReader(body))
+	dec.UseNumber()
+	var v any
+	if err := dec.Decode(&v); err != nil {
+		// sanitize.Line: a syntax error quotes the offending character, which is server text.
+		return nil, fmt.Errorf("whoami: unreadable response (%s)", sanitize.Line(err.Error()))
+	}
+	m, ok := v.(map[string]any)
+	if !ok {
+		return nil, errors.New("whoami: unreadable response (the body is not a JSON object)")
+	}
+	return m, nil
+}
+
+// object is v when it is a JSON object, else nil.
+func object(v any) map[string]any {
+	m, _ := v.(map[string]any)
+	return m
 }
 
 // bucketOrder is the order the server documents its buckets in; any other bucket follows, sorted.
@@ -90,75 +100,86 @@ func val(v any, placeholder string) string {
 // whoamiText is the human form: profile and origin, then who, the organization, the plan, the roles
 // and the remaining quota per bucket. Every server value goes through sanitize.Line.
 func whoamiText(profile, origin string, body []byte) (string, error) {
-	dec := json.NewDecoder(bytes.NewReader(body))
-	dec.UseNumber()
-	var w whoamiBody
-	if err := dec.Decode(&w); err != nil {
-		return "", fmt.Errorf("whoami: unreadable response: %w", err)
+	w, err := whoamiBody(body)
+	if err != nil {
+		return "", err
 	}
 	var b strings.Builder
 	line := func(label, value string) { fmt.Fprintf(&b, "%-9s%s\n", label+":", value) }
 	line("profile", sanitize.Line(profile))
 	line("origin", sanitize.Line(origin))
-	line("sub", val(w.Sub, notSent))
-	line("name", val(w.Name, notSent))
-	line("email", val(w.Email, notSent))
+	line("sub", val(w["sub"], notSent))
+	line("name", val(w["name"], notSent))
+	line("email", val(w["email"], notSent))
 	org := noneOrg
-	if w.Organization != nil {
-		org = val(w.Organization["name"], notSent)
+	if o := object(w["organization"]); o != nil {
+		org = val(o["name"], notSent)
+	} else if w["organization"] != nil {
+		org = notSent // present but not an object
 	}
 	line("org", org)
 	plan := nonePlan
-	if w.Plan != nil {
-		plan = val(w.Plan["name"], notSent)
+	if p := object(w["plan"]); p != nil {
+		plan = val(p["name"], notSent)
 		var notes []string
-		if st := val(w.Plan["status"], ""); st != "" {
+		if st := val(p["status"], ""); st != "" {
 			notes = append(notes, st)
 		}
-		if e, ok := w.Plan["entitled"].(bool); ok && !e {
+		if e, ok := p["entitled"].(bool); ok && !e {
 			notes = append(notes, "not entitled")
 		}
 		if len(notes) > 0 {
 			plan += " (" + strings.Join(notes, ", ") + ")"
 		}
+	} else if w["plan"] != nil {
+		plan = notSent
 	}
 	line("plan", plan)
-	roles := make([]string, 0, len(w.Roles))
-	for _, r := range w.Roles {
+	rolesRaw, _ := w["roles"].([]any)
+	roles := make([]string, 0, len(rolesRaw))
+	for _, r := range rolesRaw {
 		roles = append(roles, val(r, ""))
 	}
 	line("roles", val(strings.Join(roles, ", "), notSent))
-	if w.Quota == nil || len(w.Quota.Buckets) == 0 {
+	quota := object(w["quota"])
+	buckets := object(quota["buckets"])
+	if len(buckets) == 0 {
 		line("quota", noneQuota)
 		return b.String(), nil
 	}
-	line("quota", "remaining per bucket, keyed by "+val(w.Quota.KeyedBy, notSent))
+	line("quota", "remaining per bucket, keyed by "+val(quota["keyed_by"], notSent))
 	var names []string
 	seen := map[string]bool{}
 	for _, n := range bucketOrder {
-		if _, ok := w.Quota.Buckets[n]; ok {
+		if _, ok := buckets[n]; ok {
 			names = append(names, n)
 			seen[n] = true
 		}
 	}
 	var rest []string
-	for n := range w.Quota.Buckets {
+	for n := range buckets {
 		if !seen[n] {
 			rest = append(rest, n)
 		}
 	}
 	sort.Strings(rest)
 	names = append(names, rest...)
+	label := func(n string) string {
+		if l := strings.TrimSpace(sanitize.Line(n)); l != "" {
+			return l
+		}
+		return "(unnamed)"
+	}
 	width := 0
 	for _, n := range names {
-		if l := len(sanitize.Line(n)); l > width {
+		if l := utf8.RuneCountInString(label(n)); l > width {
 			width = l
 		}
 	}
 	for _, n := range names {
-		q := w.Quota.Buckets[n]
+		q := object(buckets[n])
 		if q == nil {
-			fmt.Fprintf(&b, "  %-*s  %s\n", width, sanitize.Line(n), notSent)
+			fmt.Fprintf(&b, "  %-*s  %s\n", width, label(n), notSent)
 			continue
 		}
 		s := val(q["remaining"], "?") + " of " + val(q["limit"], "?")
@@ -172,7 +193,7 @@ func whoamiText(profile, origin string, body []byte) (string, error) {
 		if at := val(q["resets_at"], ""); at != "" {
 			s += "; resets " + at
 		}
-		fmt.Fprintf(&b, "  %-*s  %s\n", width, sanitize.Line(n), s)
+		fmt.Fprintf(&b, "  %-*s  %s\n", width, label(n), s)
 	}
 	return b.String(), nil
 }
