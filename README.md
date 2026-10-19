@@ -52,7 +52,7 @@ sha256sum --check --ignore-missing checksums.txt
 ```sh
 po login                  # opens your browser; loopback redirect on 127.0.0.1:53682
 po login --no-browser     # prints the URL; sign in anywhere, then paste the callback URL (or just its code)
-po whoami                 # profile, origin, sub and roles; --json prints the raw body
+po whoami                 # profile, origin, who, organization, plan, roles and remaining quota; --json prints the raw body
 po logout                 # removes the stored credential for the profile
 ```
 
