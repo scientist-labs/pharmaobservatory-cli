@@ -189,57 +189,76 @@ echo "  production origin answered: $(head -c 120 "$LAST_OUT")"
 # --- 3. a list, --limit 5 --json ---------------------------------------------------------------
 run 0 --wait biomarkers list --limit 5 --json
 LIST_JSON="$LAST_OUT"
-jq -e '(.rows | length) == 5 and (.columns | length) > 0 and .pagination.limit == 5' "$LIST_JSON" >/dev/null ||
-  fail "$LAST_CMD" "expected exactly 5 rows, columns and pagination.limit 5"
+jq -e '(.rows | length) == 5 and (.columns | length) > 0 and (.columns[0].name | type) == "string" and (.next_cursor | type) == "string"' "$LIST_JSON" >/dev/null ||
+  fail "$LAST_CMD" "expected exactly 5 rows, named columns and a next_cursor"
 jq -e '(.attribution | length) > 0' "$LIST_JSON" >/dev/null || fail "$LAST_CMD" "the list declares no attribution"
 ID="$(jq -r '.rows[0].route_key' "$LIST_JSON")"
 [ -n "$ID" ] && [ "$ID" != null ] || fail "$LAST_CMD" "first row has no route_key"
 
-# --- 4. get <id> -------------------------------------------------------------------------------
+# --- 4. get <id>: a record, and a sites record --------------------------------------------------
 run 0 --wait biomarkers get "$ID" --json
 GET_JSON="$LAST_OUT"
-jq -e '.id != null or .identity != null' "$GET_JSON" >/dev/null || fail "$LAST_CMD" "the record has no identity"
+jq -e '.record != null and (.datasets | type) == "array"' "$GET_JSON" >/dev/null || fail "$LAST_CMD" "the response has no record or datasets list"
 run 0 --wait biomarkers get "$ID"
-[ -s "$LAST_OUT" ] || fail "$LAST_CMD" "empty table output"
+head -n1 "$LAST_OUT" | grep -q "^field$(printf '\t')value$" || fail "$LAST_CMD" "the record table header is not field, value"
 assert_attribution "$GET_JSON" "$LAST_ERR" "get table footer"
 [ "$ATTR_COUNT" -gt 0 ] || fail "$LAST_CMD" "the record declares no attribution"
+run 0 --wait sites list --limit 1 --json
+SITE="$(jq -r '.rows[0].site_id' "$LAST_OUT")"
+[ -n "$SITE" ] && [ "$SITE" != null ] || fail "$LAST_CMD" "first site row has no site_id"
+run 0 --wait sites get "$SITE" site-trials --limit 5 --json
+SITE_JSON="$LAST_OUT"
+jq -e '.dataset == "site_trials" and (.rows | length) > 0' "$SITE_JSON" >/dev/null || fail "$LAST_CMD" "the busiest site has no site_trials rows"
+run 0 --wait sites get "$SITE" site_trials --limit 5
+assert_attribution "$SITE_JSON" "$LAST_ERR" "site dataset footer"
 
-# --- 5. get <id> <section> --csv ---------------------------------------------------------------
-run 0 --wait biomarkers get "$ID" identity --csv
-head -n1 "$LAST_OUT" | grep -q '^key,label,value' || fail "$LAST_CMD" "csv header is not key,label,value"
-[ "$(wc -l <"$LAST_OUT")" -gt 3 ] || fail "$LAST_CMD" "csv has no data rows"
-assert_attribution "$GET_JSON" "$LAST_ERR" "csv footer"
-assert_attribution "$GET_JSON" "$LAST_OUT" "csv source comments"
+# --- 5. get <id> <dataset> --csv ---------------------------------------------------------------
+run 0 --wait biomarkers get ESR1 biomarker-evidence --limit 5 --json
+EVID_JSON="$LAST_OUT"
+jq -e '.dataset == "biomarker_evidence" and (.rows | length) > 0' "$EVID_JSON" >/dev/null || fail "$LAST_CMD" "ESR1 has no biomarker_evidence rows"
+run 0 --wait biomarkers get ESR1 biomarker-evidence --limit 5 --csv
+WANT_HEADER="$(jq -r '[.columns[].name] | join(",")' "$EVID_JSON")"
+[ "$(head -n1 "$LAST_OUT")" = "$WANT_HEADER" ] || fail "$LAST_CMD" "csv header is not the column names ($WANT_HEADER)"
+[ "$(wc -l <"$LAST_OUT")" -gt 1 ] || fail "$LAST_CMD" "csv has no data rows"
+assert_attribution "$EVID_JSON" "$LAST_ERR" "csv footer"
+assert_attribution "$EVID_JSON" "$LAST_OUT" "csv source comments"
 
-# --- 6. a collection section in the default table, on a section that carries licensed data ------
-run 0 --wait orgs list --json
-ORG_IDS="$(jq -r '.rows[:5][].id' "$LAST_OUT")"
+# --- 6. a company dataset in the default table, on a dataset that carries licensed data ---------
+# pdufa_dates credits a licensed source (Benzinga); the companies list is sorted by activity, so the
+# first few companies are the likeliest to have rows.
+run 0 --wait companies list --limit 5 --json
+COMPANY_IDS="$(jq -r '.rows[].company_id' "$LAST_OUT")"
 FOUND=""
-SECTION_JSON=""
-for oid in $ORG_IDS; do
-  run 0 --wait orgs get "$oid" benzinga_catalysts --json
+LICENSED_JSON=""
+for cid in $COMPANY_IDS; do
+  run 0 --wait companies get "$cid" pdufa-dates --json
   if jq -e '([.attribution[]? | select((.license // "") | test("icensed"))] | length) > 0 and (.rows | length) > 0' "$LAST_OUT" >/dev/null; then
-    SECTION_JSON="$LAST_OUT"
-    FOUND="$oid"
+    LICENSED_JSON="$LAST_OUT"
+    FOUND="$cid"
     break
   fi
 done
-[ -n "$FOUND" ] || fail "$LAST_CMD" "none of the first 5 organizations has a licensed collection section with rows"
-run 0 --wait orgs get "$FOUND" benzinga_catalysts
+[ -n "$FOUND" ] || fail "$LAST_CMD" "none of the first 5 companies has pdufa_dates rows with a licensed credit"
+run 0 --wait companies get "$FOUND" pdufa_dates
 [ "$(wc -l <"$LAST_OUT")" -ge 2 ] || fail "$LAST_CMD" "table has no header plus a row"
 head -n1 "$LAST_OUT" | grep -q "$(printf '\t')" || fail "$LAST_CMD" "table header is not tab separated"
-assert_attribution "$SECTION_JSON" "$LAST_ERR" "licensed section footer"
+assert_attribution "$LICENSED_JSON" "$LAST_ERR" "licensed dataset footer"
 grep -q 'icensed' "$LAST_ERR" || fail "$LAST_CMD" "the licence text is not printed in the footer"
+run 0 --wait companies get "$FOUND" sponsor-trials --limit 5 --json
+TRIALS_JSON="$LAST_OUT"
+jq -e '.dataset == "sponsor_trials" and (.columns | length) > 0' "$TRIALS_JSON" >/dev/null || fail "$LAST_CMD" "not a sponsor_trials dataset response"
+run 0 --wait companies get "$FOUND" sponsor_trials --limit 5
+assert_attribution "$TRIALS_JSON" "$LAST_ERR" "company dataset footer"
 
-# --- 7. --all on a small list ------------------------------------------------------------------
-run 0 --wait biomarkers list --q ERBB2 --limit 50 --all
+# --- 7. --all on a small filtered list ----------------------------------------------------------
+run 0 --wait biomarkers list --filter gene_symbol=EGFR --limit 2 --all
 if ! grep -Eq 'fetched [0-9]+ rows; total [0-9]+' "$LAST_ERR"; then
   fail "$LAST_CMD" "no 'fetched N rows; total M' line in the footer"
 fi
 fetched="$(sed -En 's/.*fetched ([0-9]+) rows; total ([0-9]+).*/\1/p' "$LAST_ERR" | head -1)"
 total="$(sed -En 's/.*fetched ([0-9]+) rows; total ([0-9]+).*/\2/p' "$LAST_ERR" | head -1)"
 [ "$fetched" = "$total" ] || fail "$LAST_CMD" "fetched $fetched rows but the server's total is $total"
-[ "$fetched" -gt 50 ] || fail "$LAST_CMD" "--all fetched $fetched rows: the list fits one page, so paging is not exercised"
+[ "$fetched" -gt 2 ] || fail "$LAST_CMD" "--all fetched $fetched rows: the filtered list fits one page of 2, so paging is not exercised"
 # A cell may hold a newline, so lines can exceed rows; fewer lines than rows plus a header is a loss.
 [ "$(wc -l <"$LAST_OUT")" -ge "$((fetched + 1))" ] || fail "$LAST_CMD" "table has $(wc -l <"$LAST_OUT") lines for $fetched rows and a header"
 [ "$fetched" -le 500 ] || echo "::warning title=list grew::--all on a supposedly small list fetched $fetched rows"
@@ -261,12 +280,12 @@ assert_attribution "$QUERY_JSON" "$LAST_ERR" "query footer"
 hit=""
 for i in $(seq 1 80); do
   qout="$OUT/quota.$i"
-  "$CLI" cell-lines status_counts --json >"$qout.out" 2>"$qout.err"
+  "$CLI" cell-lines list --limit 1 --json >"$qout.out" 2>"$qout.err"
   rc=$?
   LAST_RC=$rc
   LAST_OUT="$qout.out"
   LAST_ERR="$qout.err"
-  LAST_CMD="cell-lines status_counts --json (call $i of a burst)"
+  LAST_CMD="cell-lines list --limit 1 --json (call $i of a burst)"
   if [ "$rc" -eq 6 ]; then
     hit="$i"
     break

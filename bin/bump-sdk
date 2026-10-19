@@ -51,7 +51,10 @@ trap restore EXIT
 go get "$mod@$to"
 go mod tidy
 new_dir=$(go list -m -f '{{.Dir}}' "$mod")
-go generate ./...
+# Only the package that owns the //go:generate line: `go generate ./...` lists every package's files
+# up front, so when the generator deletes a page file (an object type the new SDK dropped), the
+# later pass over internal/cmd/pages fails opening it.
+go generate ./internal/cmd
 trap - EXIT
 rm -rf "$snap"
 

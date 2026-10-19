@@ -32,7 +32,8 @@ jobs:
         with:
           version: v2.15.0
       - name: generated tree is current
-        run: go generate ./... && git diff --exit-code
+        # git status also catches a generated file that is new and untracked, which git diff misses.
+        run: go generate ./... && git diff --exit-code && test -z "$(git status --porcelain)" || { git status --porcelain; exit 1; }
       - name: codename guard
         run: bin/check-no-codename
 

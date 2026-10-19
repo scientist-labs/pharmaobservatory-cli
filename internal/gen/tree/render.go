@@ -39,6 +39,7 @@ func ident(o Op) string {
 
 type pageView struct {
 	Slug    string
+	Command string
 	Ident   string
 	Escaped bool
 	Ops     []opView
@@ -60,7 +61,7 @@ func {{.Ident}}() *Op {
 	fs.{{.Define}}({{q .Flag}}, {{if eq .Type "string"}}""{{else if eq .Type "boolean"}}false{{else}}0{{end}}, {{q .Desc}})
 {{- end}}
 	return &Op{
-		Key: {{q .Key}}, Short: {{q .Summary}}, Path: {{q .Path}}, Escaped: {{.Escaped}}, Flags: fs,
+		Key: {{q .Key}}, IDName: {{q .IDName}}, Short: {{q .Summary}}, Path: {{q .Path}}, Escaped: {{.Escaped}}, Flags: fs,
 		Call: func(ctx context.Context, cl *sdk.APIClient, id string, fs *pflag.FlagSet) (*http.Response, error) {
 			{{if .HasID}}r := cl.{{.Service}}.{{.Method}}(ctx, id){{else}}_ = id
 			r := cl.{{.Service}}.{{.Method}}(ctx){{end}}
@@ -95,7 +96,7 @@ import (
 
 func page{{.Page.Ident}}() *PageSpec {
 	return &PageSpec{
-		Slug: {{q .Page.Slug}}, Escaped: {{.Page.Escaped}},
+		Slug: {{q .Page.Slug}}, Command: {{q .Page.Command}}, Escaped: {{.Page.Escaped}},
 {{- if .Page.List}}
 		List: {{.Page.List}}(),
 {{- end}}
@@ -154,7 +155,7 @@ func Render(m *Model) ([]File, error) {
 		v := byPage[o.Page]
 		if v == nil {
 			pi := pascal(o.Page)
-			v = &pageView{Slug: o.Page, Ident: pi, Escaped: PageEscaped(o.Page)}
+			v = &pageView{Slug: o.Page, Command: Kebab(o.Page), Ident: pi, Escaped: PageEscaped(o.Page)}
 			byPage[o.Page] = v
 			pageIdents = append(pageIdents, pi)
 		}

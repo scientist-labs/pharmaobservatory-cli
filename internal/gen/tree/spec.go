@@ -27,8 +27,8 @@ type Param struct {
 // Kinds of page operation.
 const (
 	KindList      = "list"      // GET /api/v1/{page}
-	KindGet       = "get"       // GET /api/v1/{page}/{id}
-	KindIDSection = "idsection" // GET /api/v1/{page}/{id}/{key}
+	KindGet       = "get"       // GET /api/v1/{page}/{id} (or another single path parameter, {name})
+	KindIDSection = "idsection" // GET /api/v1/{page}/{id}/{key}: a dataset of one record
 	KindSection   = "section"   // GET /api/v1/{page}/{key}
 )
 
@@ -44,7 +44,8 @@ type Op struct {
 	Service     string // APIClient field
 	Method      string // SDK method name
 	HasID       bool
-	Escaped     bool // a collection section whose key is a reserved page-group name
+	IDName      string // the path parameter's wire name (id, or name for datasets), empty without one
+	Escaped     bool   // a collection section whose key is a reserved page-group name
 }
 
 // Model is everything the renderer needs.
@@ -80,10 +81,12 @@ type specOpRef struct {
 }
 
 var (
-	opIDRe   = regexp.MustCompile(`^([a-z0-9-]+)\.([a-z0-9_]+)$`)
+	// A page (an object type) may contain underscores (cell_lines); its command is the kebab form.
+	opIDRe   = regexp.MustCompile(`^([a-z0-9_-]+)\.([a-z0-9_]+)$`)
+	pathParm = regexp.MustCompile(`^\{([a-z][a-z0-9_]*)\}$`)
 	keyRe    = regexp.MustCompile(`^[a-z0-9_]+$`)
 	paramRe  = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
-	slugRe   = regexp.MustCompile(`^[a-z0-9-]+$`)
+	slugRe   = regexp.MustCompile(`^[a-z0-9_-]+$`)
 	prefixV1 = "/api/v1/"
 )
 
@@ -147,12 +150,12 @@ func classify(r specOpRef) (page, kind, key string, ok bool, err error) {
 			return "", "", "", false, bad("list")
 		}
 		return page, KindList, "", true, nil
-	case len(segs) == 2 && segs[1] == "{id}":
+	case len(segs) == 2 && pathParm.MatchString(segs[1]):
 		if m[2] != "get" {
 			return "", "", "", false, bad("get")
 		}
 		return page, KindGet, "", true, nil
-	case len(segs) == 3 && segs[1] == "{id}" && keyRe.MatchString(segs[2]):
+	case len(segs) == 3 && pathParm.MatchString(segs[1]) && keyRe.MatchString(segs[2]):
 		if m[2] != segs[2] {
 			return "", "", "", false, bad(segs[2])
 		}
@@ -166,5 +169,16 @@ func classify(r specOpRef) (page, kind, key string, ok bool, err error) {
 	return "", "", "", false, nil
 }
 
-// Kebab turns a snake_case parameter name into its flag name.
+// pathParam is the name of the single path parameter of a page operation's path, or "".
+func pathParam(path string) string {
+	segs := strings.Split(strings.TrimPrefix(path, prefixV1), "/")
+	if len(segs) >= 2 {
+		if m := pathParm.FindStringSubmatch(segs[1]); m != nil {
+			return m[1]
+		}
+	}
+	return ""
+}
+
+// Kebab turns a snake_case name into its flag or command name.
 func Kebab(s string) string { return strings.ReplaceAll(s, "_", "-") }

@@ -203,16 +203,3 @@ func IdentityGrid(e *Envelope, csv bool) Grid {
 	}
 	return g
 }
-
-// SectionsGrid is the sections index: what to ask next, unavailable ones listed as such.
-func SectionsGrid(e *Envelope) Grid {
-	g := Grid{Header: []string{"section", "heading", "available"}}
-	for _, s := range e.Sections {
-		a := "yes"
-		if !s.Available {
-			a = "unavailable"
-		}
-		g.Rows = append(g.Rows, []string{s.Key, s.Heading, a})
-	}
-	return g
-}

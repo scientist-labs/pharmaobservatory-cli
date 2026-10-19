@@ -50,6 +50,7 @@ func Build(dir, module, version string) (*Model, error) {
 	m := &Model{SDKModule: module, SDKVersion: version}
 	pages := map[string]bool{}
 	seen := map[string]string{}
+	pageNorm := map[string]string{}
 	for _, r := range refs {
 		page, kind, key, ok, err := classify(r)
 		if err != nil {
@@ -72,19 +73,20 @@ func Build(dir, module, version string) (*Model, error) {
 		}
 		op := Op{Page: page, Kind: kind, Key: key, Path: r.Path, OperationID: r.Op.OperationID,
 			Summary: strings.TrimSpace(r.Op.Summary), Service: field, Method: so.Method,
-			HasID: strings.Contains(r.Path, "{id}")}
+			IDName: pathParam(r.Path)}
+		op.HasID = op.IDName != ""
 		wantPos := 0
 		if op.HasID {
 			wantPos = 1
 		}
-		if len(so.Positional) != wantPos || (wantPos == 1 && so.Positional[0] != "id") {
+		if len(so.Positional) != wantPos || (wantPos == 1 && so.Positional[0] != op.IDName) {
 			return nil, fmt.Errorf("GET %s: SDK positional parameters %v do not match the path", r.Path, so.Positional)
 		}
 		specQ := map[string]specParam{}
 		for _, p := range r.Op.Parameters {
 			switch p.In {
 			case "path":
-				if p.Name != "id" {
+				if p.Name != op.IDName {
 					return nil, fmt.Errorf("GET %s: path parameter %q is not supported", r.Path, p.Name)
 				}
 			case "query":
@@ -136,12 +138,18 @@ func Build(dir, module, version string) (*Model, error) {
 			op.Params = append(op.Params, Param{Name: n, Flag: flag, Desc: desc, Type: t,
 				Setter: s.Name, GoType: s.GoType, Define: def[0], Getter: def[1]})
 		}
-		id := fmt.Sprintf("%s|%s|%s", page, kind, key)
+		// Keyed on the command form with separators folded away: cell_lines and cell-lines are one
+		// command, and x_1 and x1 one Go identifier (X1), so either pair is a generator error.
+		if prev, dup := pageNorm[fold(page)]; dup && prev != page {
+			return nil, fmt.Errorf("object types %q and %q map to the same command or identifier (%s)", prev, page, Kebab(page))
+		}
+		pageNorm[fold(page)] = page
+		id := fmt.Sprintf("%s|%s|%s", fold(page), kind, fold(key))
 		if prev, dup := seen[id]; dup {
-			return nil, fmt.Errorf("GET %s and %s both map to %s", r.Path, prev, id)
+			return nil, fmt.Errorf("GET %s and %s map to the same command or identifier (%s %s %s)", prev, r.Path, Kebab(page), kind, Kebab(key))
 		}
 		seen[id] = r.Path
-		op.Escaped = kind == KindSection && PageReserved[key]
+		op.Escaped = kind == KindSection && PageReserved[Kebab(key)]
 		pages[page] = true
 		m.Ops = append(m.Ops, op)
 	}
@@ -162,6 +170,10 @@ func Build(dir, module, version string) (*Model, error) {
 	})
 	return m, nil
 }
+
+// fold is a name with case and separators removed: two names that fold alike collide as a command
+// (Kebab) or as a generated Go identifier (pascal).
+func fold(s string) string { return strings.ToLower(strings.NewReplacer("-", "", "_", "").Replace(s)) }
 
 // CheckAllowlist fails when the unmapped (non-page) operations differ from the hand-mapped set.
 func CheckAllowlist(unmapped, allow []string) error {
@@ -190,5 +202,5 @@ func CheckAllowlist(unmapped, allow []string) error {
 	return fmt.Errorf("non-page operations not hand-mapped: %v; allowlisted but no longer in the document: %v", unexpected, gone)
 }
 
-// PageEscaped reports whether a page slug collides with a top-level command.
-func PageEscaped(slug string) bool { return TopReserved[slug] }
+// PageEscaped reports whether a page's command name collides with a top-level command.
+func PageEscaped(slug string) bool { return TopReserved[Kebab(slug)] }

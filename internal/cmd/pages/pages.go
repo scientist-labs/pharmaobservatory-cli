@@ -1,6 +1,6 @@
-// Package pages builds the page command tree. The per-page operations are generated into
-// zz_generated_*.go by internal/gen from the pinned SDK module; this file is the hand-written
-// runtime they plug into.
+// Package pages builds the command tree: one group per object type (companies, cell-lines, sites,
+// ...) and the dataset catalog. The operations are generated into zz_generated_*.go by internal/gen
+// from the pinned SDK module; this file is the hand-written runtime they plug into.
 package pages
 
 import (
@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"sort"
 	"strings"
 
@@ -18,6 +19,7 @@ import (
 
 	sdk "github.com/scientist-labs/pharmaobservatory-sdks/go"
 
+	"github.com/scientist-labs/pharmaobservatory-cli/internal/api"
 	"github.com/scientist-labs/pharmaobservatory-cli/internal/apierr"
 	"github.com/scientist-labs/pharmaobservatory-cli/internal/output"
 	"github.com/scientist-labs/pharmaobservatory-cli/internal/sanitize"
@@ -26,6 +28,7 @@ import (
 // Op is one generated operation: its flags, its help and the typed SDK call.
 type Op struct {
 	Key     string
+	IDName  string // the path parameter (id, or name for datasets), empty when the operation takes none
 	Short   string
 	Path    string
 	Escaped bool
@@ -35,7 +38,8 @@ type Op struct {
 
 // PageSpec is one page: its operations by kind.
 type PageSpec struct {
-	Slug       string
+	Slug       string // the API's name for the object type (cell_lines)
+	Command    string // its command name (cell-lines)
 	Escaped    bool
 	List, Get  *Op
 	IDSections []*Op // GET /api/v1/{page}/{id}/{key}
@@ -68,11 +72,67 @@ type Settings struct{ JSON, CSV, All, Quiet bool }
 // top-level command is registered only under `po page <slug>`.
 func Build(e *Env) []*cobra.Command { return buildFrom(e, allPages()) }
 
+// filterFlag is the hand-written flag every dataset read gets (an operation that pages, so it
+// declares --cursor). The server's filter grammar keys a filter by column name ({column}=v,
+// {column}.gt=v, ...), so the document cannot declare it as a parameter; the transport appends each
+// --filter to the query string the SDK built.
+const filterFlag = "filter"
+
+// reservedQuery are the dataset parameters the server reserves; a --filter cannot spell them.
+var reservedQuery = map[string]bool{"cursor": true, "limit": true, "sort": true, "group_by": true, "measure": true, "scope": true, "format": true, "counts": true}
+
+func addFilterFlag(o *Op) {
+	if o == nil || o.Flags.Lookup("cursor") == nil || o.Flags.Lookup(filterFlag) != nil {
+		return
+	}
+	o.Flags.StringArray(filterFlag, nil, "filter rows, column=value or column.op=value (op: gt, gte, lt, lte, ne, contains, null); repeatable, a repeated column=value is an IN list")
+}
+
+// filters reads --filter into query values, refusing a malformed or reserved key as a usage error.
+func filters(fs *pflag.FlagSet) (url.Values, error) {
+	if fs.Lookup(filterFlag) == nil {
+		return nil, nil
+	}
+	raw, err := fs.GetStringArray(filterFlag)
+	if err != nil || len(raw) == 0 {
+		return nil, err
+	}
+	q := url.Values{}
+	for _, f := range raw {
+		k, v, ok := strings.Cut(f, "=")
+		k = strings.TrimSpace(k)
+		if !ok || k == "" {
+			return nil, apierr.Usage(fmt.Errorf("--filter wants column=value or column.op=value, got %q", sanitize.Line(f)))
+		}
+		// A column name never holds a bracket; refusing them closes the limit[]=5 spelling of a
+		// reserved key, and the reserved check compares the trimmed, lowercased column.
+		if strings.ContainsAny(k, "[]") {
+			return nil, apierr.Usage(fmt.Errorf("--filter key %q is not a column name (no brackets)", sanitize.Line(k)))
+		}
+		if col, _, _ := strings.Cut(k, "."); reservedQuery[strings.ToLower(col)] {
+			col = strings.ToLower(col)
+			return nil, apierr.Usage(fmt.Errorf("--filter cannot set %q; use --%s", col, strings.ReplaceAll(col, "_", "-")))
+		}
+		q.Add(k, v)
+	}
+	return q, nil
+}
+
 func buildFrom(e *Env, specs []*PageSpec) []*cobra.Command {
 	var top []*cobra.Command
+	for _, s := range specs {
+		addFilterFlag(s.List)
+		addFilterFlag(s.Get)
+		for _, o := range s.IDSections {
+			addFilterFlag(o)
+		}
+		for _, o := range s.Sections {
+			addFilterFlag(o)
+		}
+	}
 	escape := &cobra.Command{
-		Use:   "page <slug>",
-		Short: "Reach a page whose name is also a command",
+		Use:   "page <name>",
+		Short: "Reach an object type whose name is also a command",
 		Args:  unknownArgs,
 		Run:   func(c *cobra.Command, _ []string) { _ = c.Help() },
 	}
@@ -97,19 +157,43 @@ func unknownArgs(c *cobra.Command, args []string) error {
 	return nil
 }
 
+// command is a page's command name: the kebab form of its API name.
+func (s *PageSpec) command() string {
+	if s.Command != "" {
+		return s.Command
+	}
+	return s.Slug
+}
+
+// cmdKey is a dataset's subcommand name: the kebab form of its API key. The API key itself is
+// accepted too, so a name copied from a response works.
+func cmdKey(key string) string { return strings.ReplaceAll(key, "_", "-") }
+
+func aliases(name, apiName string) []string {
+	if name == apiName {
+		return nil
+	}
+	return []string{apiName}
+}
+
 func pageCmd(e *Env, s *PageSpec) *cobra.Command {
+	name := s.command()
 	page := &cobra.Command{
-		Use:   s.Slug,
-		Short: "Query the " + s.Slug + " page",
-		Args:  unknownArgs,
-		Run:   func(c *cobra.Command, _ []string) { _ = c.Help() },
+		Use:     name,
+		Aliases: aliases(name, s.Slug),
+		Short:   "Read " + name,
+		Args:    unknownArgs,
+		Run:     func(c *cobra.Command, _ []string) { _ = c.Help() },
+	}
+	if len(s.IDSections) > 0 {
+		page.Short += " and the datasets of one record"
 	}
 	var long strings.Builder
-	fmt.Fprintf(&long, "Query the %s page of the API.\n", s.Slug)
+	fmt.Fprintf(&long, "Read %s through the API (GET /api/v1/%s).\n", name, s.Slug)
 	if len(s.IDSections) > 0 {
-		long.WriteString("\nSections of a record (" + apierr.Bin + " " + s.Slug + " get <id> <section>):\n")
+		long.WriteString("\nDatasets of one record (" + apierr.Bin + " " + name + " get <id> <dataset>):\n")
 		for _, o := range sortedOps(s.IDSections) {
-			fmt.Fprintf(&long, "  %-34s %s\n", o.Key, o.Short)
+			fmt.Fprintf(&long, "  %-34s %s\n", cmdKey(o.Key), o.Short)
 		}
 	}
 	page.Long = strings.TrimRight(long.String(), "\n")
@@ -125,17 +209,17 @@ func pageCmd(e *Env, s *PageSpec) *cobra.Command {
 			escaped = append(escaped, o)
 			continue
 		}
-		page.AddCommand(opCmd(e, o, o.Key, nil))
+		page.AddCommand(opCmd(e, o, cmdKey(o.Key), nil))
 	}
 	if len(escaped) > 0 {
 		sec := &cobra.Command{
 			Use:   "section <key>",
-			Short: "Reach a section whose key is also a command name",
+			Short: "Reach a dataset whose key is also a command name",
 			Args:  unknownArgs,
 			Run:   func(c *cobra.Command, _ []string) { _ = c.Help() },
 		}
 		for _, o := range escaped {
-			sec.AddCommand(opCmd(e, o, o.Key, nil))
+			sec.AddCommand(opCmd(e, o, cmdKey(o.Key), nil))
 		}
 		page.AddCommand(sec)
 	}
@@ -151,10 +235,11 @@ func sortedOps(ops []*Op) []*Op {
 // opCmd is the cobra command for an operation that takes no id.
 func opCmd(e *Env, o *Op, use string, _ any) *cobra.Command {
 	c := &cobra.Command{
-		Use:   use,
-		Short: o.Short,
-		Long:  o.Short + "\n\nGET " + o.Path,
-		Args:  unknownArgs,
+		Use:     use,
+		Aliases: aliases(use, o.Key),
+		Short:   o.Short,
+		Long:    o.Short + "\n\nGET " + o.Path,
+		Args:    unknownArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return e.run(cmd, o, "", o.Flags)
 		},
@@ -163,24 +248,34 @@ func opCmd(e *Env, o *Op, use string, _ any) *cobra.Command {
 	return c
 }
 
-// getCmd is `get <id> [section]`. The sections have different flags, so it parses its own
-// arguments: the first pass finds the id and section (flags it does not know are skipped), the
+// getCmd is `get <id> [dataset]`. The datasets have different flags, so it parses its own
+// arguments: the first pass finds the id and dataset (flags it does not know are skipped), the
 // second parses strictly against the chosen operation's flags.
 func getCmd(e *Env, s *PageSpec) *cobra.Command {
+	name := s.command()
+	idName := "id"
+	if s.Get != nil && s.Get.IDName != "" {
+		idName = s.Get.IDName
+	}
+	arg := "<" + idName + ">"
 	c := &cobra.Command{
-		Use:                "get <id> [section]",
-		Short:              "Get one record, or one section of it",
+		Use:                "get " + arg + " [dataset]",
+		Short:              "Get one record, or one dataset of it",
 		DisableFlagParsing: true,
 	}
+	if len(s.IDSections) == 0 {
+		c.Use = "get " + arg
+		c.Short = "Get one record"
+	}
 	var long strings.Builder
-	long.WriteString("Get one record, or one section of it.\n\nThe id is passed through verbatim and URL-encoded once. Put the id and the section before any flags.")
+	long.WriteString(c.Short + ".\n\nThe " + idName + " is passed through verbatim and URL-encoded once. Put the " + idName + " and the dataset before any flags.")
 	if s.Get != nil {
-		long.WriteString("\n\n  " + apierr.Bin + " " + s.Slug + " get <id>\n      " + s.Get.Short + "\n      GET " + s.Get.Path)
+		long.WriteString("\n\n  " + apierr.Bin + " " + name + " get " + arg + "\n      " + s.Get.Short + "\n      GET " + s.Get.Path)
 	}
 	if len(s.IDSections) > 0 {
-		long.WriteString("\n\nSections (" + apierr.Bin + " " + s.Slug + " get <id> <section> --help shows a section's flags):\n")
+		long.WriteString("\n\nDatasets (" + apierr.Bin + " " + name + " get " + arg + " <dataset> --help shows a dataset's flags):\n")
 		for _, o := range sortedOps(s.IDSections) {
-			fmt.Fprintf(&long, "  %-34s %s\n", o.Key, o.Short)
+			fmt.Fprintf(&long, "  %-34s %s\n", cmdKey(o.Key), o.Short)
 		}
 	}
 	c.Long = strings.TrimRight(long.String(), "\n")
@@ -199,23 +294,23 @@ func getCmd(e *Env, s *PageSpec) *cobra.Command {
 		case len(pos) == 0 && *help:
 			return cmd.Help()
 		case len(pos) == 0:
-			return apierr.Usage(fmt.Errorf("get needs an id: %s %s get <id> [section]", apierr.Bin, s.Slug))
+			return apierr.Usage(fmt.Errorf("get needs an %s: %s %s get %s [dataset]", idName, apierr.Bin, name, arg))
 		case len(pos) == 1:
 			op = s.Get
 			if op == nil {
-				return apierr.Usage(fmt.Errorf("%s has no record command; sections: %s", s.Slug, keys(s.IDSections)))
+				return apierr.Usage(fmt.Errorf("%s has no record command; datasets: %s", name, keys(s.IDSections)))
 			}
 		case len(pos) == 2:
 			for _, o := range s.IDSections {
-				if o.Key == pos[1] {
+				if cmdKey(o.Key) == cmdKey(pos[1]) {
 					op = o
 				}
 			}
 			if op == nil {
-				return apierr.Usage(fmt.Errorf("unknown section %q for %s; valid sections: %s", pos[1], s.Slug, keys(s.IDSections)))
+				return apierr.Usage(fmt.Errorf("unknown dataset %q for %s; valid datasets: %s", pos[1], name, keys(s.IDSections)))
 			}
 		default:
-			return apierr.Usage(fmt.Errorf("too many arguments: %s %s get <id> [section]", apierr.Bin, s.Slug))
+			return apierr.Usage(fmt.Errorf("too many arguments: %s %s get %s [dataset]", apierr.Bin, name, arg))
 		}
 		strict := pflag.NewFlagSet("get", pflag.ContinueOnError)
 		strict.SetOutput(io.Discard)
@@ -226,7 +321,11 @@ func getCmd(e *Env, s *PageSpec) *cobra.Command {
 			return apierr.Usage(err)
 		}
 		if h, _ := strict.GetBool("help"); h {
-			_, err := fmt.Fprintf(cmd.OutOrStdout(), "%s\n\nUsage:\n  %s %s get <id> %s [flags]\n\nFlags:\n%s", op.Short+"\nGET "+op.Path, apierr.Bin, s.Slug, op.Key, op.Flags.FlagUsages())
+			use := "get " + arg
+			if op != s.Get {
+				use += " " + cmdKey(op.Key)
+			}
+			_, err := fmt.Fprintf(cmd.OutOrStdout(), "%s\n\nUsage:\n  %s %s %s [flags]\n\nFlags:\n%s", op.Short+"\nGET "+op.Path, apierr.Bin, name, use, op.Flags.FlagUsages())
 			return err
 		}
 		return e.run(cmd, op, pos[0], op.Flags)
@@ -237,7 +336,7 @@ func getCmd(e *Env, s *PageSpec) *cobra.Command {
 func keys(ops []*Op) string {
 	var k []string
 	for _, o := range sortedOps(ops) {
-		k = append(k, o.Key)
+		k = append(k, cmdKey(o.Key))
 	}
 	return strings.Join(k, ", ")
 }
@@ -255,11 +354,15 @@ func (e *Env) run(cmd *cobra.Command, o *Op, id string, fs *pflag.FlagSet) error
 	if set.JSON && set.All {
 		return apierr.Usage(errors.New("--all cannot be combined with --json (one body per page); use --cursor to page by hand"))
 	}
+	extra, err := filters(fs)
+	if err != nil {
+		return err
+	}
 	cl, err := e.Client()
 	if err != nil {
 		return err
 	}
-	w := &walker{e: e, cmd: cmd, cl: cl, o: o, id: id, fs: fs, set: set}
+	w := &walker{e: e, cmd: cmd, cl: cl, o: o, id: id, fs: fs, set: set, extra: extra}
 	if set.JSON {
 		return w.raw()
 	}
@@ -278,13 +381,16 @@ type walker struct {
 	id  string
 	fs  *pflag.FlagSet
 	set Settings
+	// extra is the --filter query, appended by the transport to every page's request.
+	extra url.Values
 }
 
 func (w *walker) ctx() context.Context {
-	if c := w.cmd.Context(); c != nil {
-		return c
+	c := w.cmd.Context()
+	if c == nil {
+		c = context.Background()
 	}
-	return context.Background()
+	return api.WithQuery(c, w.extra)
 }
 
 // generationChanged marks a 409 generation_changed: a walk may restart once, anything else
@@ -309,9 +415,10 @@ func (w *walker) fetch() ([]byte, error) {
 		err := apierr.FromResponse(resp.StatusCode, resp.Header, body, w.cl.Profile)
 		if resp.StatusCode == http.StatusConflict {
 			var b struct {
-				Error string `json:"error"`
+				Error     string `json:"error"`
+				ErrorCode string `json:"error_code"`
 			}
-			if json.Unmarshal(body, &b) == nil && b.Error == "generation_changed" {
+			if json.Unmarshal(body, &b) == nil && (b.Error == "generation_changed" || b.ErrorCode == "GENERATION_CHANGED") {
 				err = &generationChanged{err}
 			}
 		}
@@ -384,8 +491,10 @@ func (w *walker) render() error {
 		var gc *generationChanged
 		if errors.As(err, &gc) && w.set.All {
 			if !restarted {
+				// The page count is NOT reset: one --all run fetches at most MaxPages pages in
+				// all, restart included.
 				restarted, first, last, rows = true, nil, nil, nil
-				pages, seen = 0, map[string]bool{}
+				seen = map[string]bool{}
 				if origCursor != "" {
 					seen[origCursor] = true
 				}
@@ -424,7 +533,7 @@ func (w *walker) render() error {
 		if first == nil {
 			first = env
 			if !env.IsTable() && env.Identity == nil {
-				return errors.New("the response is not a section envelope; use --json to see it")
+				return errors.New("the response is not a dataset response; use --json to see it")
 			}
 		}
 		last = env
@@ -497,11 +606,11 @@ func (w *walker) renderBody(first *output.Envelope, rows [][]string, out io.Writ
 		if err := emit(output.IdentityGrid(first, w.set.CSV)); err != nil {
 			return err
 		}
-		if w.set.CSV || len(first.Sections) == 0 {
+		if w.set.CSV || first.Index == nil || len(first.Index.Rows) == 0 {
 			return nil
 		}
 		_, _ = io.WriteString(out, "\n")
-		return emit(output.SectionsGrid(first))
+		return emit(*first.Index)
 	}
 	g := output.Grid{Rows: rows}
 	if w.set.CSV {
