@@ -161,6 +161,8 @@ func TestEveryQueryParameterIsAFlag(t *testing.T) {
 		{"biomarkers", tree.KindList, "sort"}, {"biomarkers", tree.KindList, "group-by"},
 		{"biomarkers", tree.KindList, "measure"}, {"biomarkers", tree.KindList, "filter"},
 		{"companies", tree.KindIDSection, "scope"}, {"cell_lines", tree.KindList, "cursor"},
+		{"trials", tree.KindIDSection, "filter"}, {"trials", tree.KindIDSection, "cursor"},
+		{"conditions", tree.KindList, "filter"}, {"conditions", tree.KindIDSection, "group-by"},
 	} {
 		found := false
 		for r, o := range byRef {

@@ -635,3 +635,69 @@ func TestPageCapHoldsAcrossAGenerationRestart(t *testing.T) {
 		t.Fatalf("%d calls, want 4 (page 1, the 409, then 2 more pages to reach the cap of 3)", calls)
 	}
 }
+
+// The v0.1.4 object types and datasets: trials and conditions with their datasets, and the new
+// company and biomarker datasets, all reachable, kebab or API spelling, with --filter and paging.
+func TestTrialsConditionsAndTheNewDatasetsAreReachable(t *testing.T) {
+	e := loggedIn(t)
+	e.api = serve(page1("", "2"))
+	for args, want := range map[string]string{
+		"trials get NCT01234567 trial-drugs --limit 5 --filter molecule_name=aspirin": "/api/v1/trials/NCT01234567/trial_drugs?limit=5&molecule_name=aspirin",
+		"trials get NCT01234567 trial_delivery":                                       "/api/v1/trials/NCT01234567/trial_delivery",
+		"trials list --filter phase=PHASE3 --sort -start_date":                        "/api/v1/trials?sort=-start_date&phase=PHASE3",
+		"conditions get D001943 condition-trials --cursor c9":                         "/api/v1/conditions/D001943/condition_trials?cursor=c9",
+		"companies get c1 company-assets":                                             "/api/v1/companies/c1/company_assets",
+		"companies get c1 company-funding-events --scope group":                       "/api/v1/companies/c1/company_funding_events?scope=group",
+		"companies get c1 company-funding-summary":                                    "/api/v1/companies/c1/company_funding_summary",
+		"companies get c1 ownership-positions":                                        "/api/v1/companies/c1/ownership_positions",
+		"biomarkers get ESR1 biomarker-validation":                                    "/api/v1/biomarkers/ESR1/biomarker_validation",
+	} {
+		if _, _, err := e.split(strings.Fields(args)...); err != nil {
+			t.Fatalf("%s: %v", args, err)
+		}
+		if got := e.lastSeen(t); got != want {
+			t.Errorf("%s: request %s want %s", args, got, want)
+		}
+	}
+}
+
+// trial_delivery's has_enrollment_delta reaches the Go SDK only as an additional property (see the
+// SDK's bin/go-spec-patch); the CLI renders rows from the response columns, so it is a column like
+// any other, in the table and in CSV, and every cell is sanitized.
+func TestTrialDeliveryRendersHasEnrollmentDeltaAndSanitizes(t *testing.T) {
+	e := loggedIn(t)
+	e.api = serve(`{"dataset":"trial_delivery","grain":"one row per trial","object_type":"trials","id":"NCT01234567",` +
+		`"columns":[{"name":"trial_id","type":"text"},{"name":"enrollment_delta","type":"integer"},{"name":"has_enrollment_delta","type":"boolean"},{"name":"note","type":"text"}],` +
+		`"rows":[{"trial_id":"NCT01234567","enrollment_delta":12,"has_enrollment_delta":true,"note":"a\u001b[31mb\u202ec"}],"total":1,"next_cursor":null,` +
+		`"attribution":[{"name":"ClinicalTrials.gov via AACT, CTTI","license":"CC BY","href":"https://example.test/aact"}],"build_state":{"built":true,"generation":"g1","last_loaded":null}}`)
+	out, errOut, err := e.split("trials", "get", "NCT01234567", "trial-delivery")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(out, "trial_id\tenrollment_delta\thas_enrollment_delta\tnote\nNCT01234567\t12\ttrue\tabc\n# Source: ClinicalTrials.gov") {
+		t.Fatalf("%q", out)
+	}
+	if strings.ContainsAny(out+errOut, "\x1b\u202e") {
+		t.Fatalf("control text reached the terminal: %q", out+errOut)
+	}
+	csv, _, err := e.split("trials", "get", "NCT01234567", "trial-delivery", "--csv")
+	if err != nil || !strings.HasPrefix(csv, "trial_id,enrollment_delta,has_enrollment_delta,note\nNCT01234567,12,true,abc\n") {
+		t.Fatalf("%v %q", err, csv)
+	}
+}
+
+func TestConditionRecordRendersLikeEveryRecord(t *testing.T) {
+	e := loggedIn(t)
+	e.api = serve(`{"object_type":"conditions","id":"D001943","record":{"condition_id":"D001943","condition_name":"Breast Neoplasms","categories":["Neoplasms","Skin"],"n_trials":4021},` +
+		`"attributes":{"condition_burden":{"dalys":123.5}},"datasets":[{"name":"condition_trials","title":"Trials","tier":null,"entitled":true,"row_count":null}],` +
+		`"attribution":[{"name":"US National Library of Medicine, Medical Subject Headings (MeSH)","license":"Public domain","href":"https://example.test/mesh"}],` +
+		`"build_state":{"built":true,"generation":"g1","last_loaded":null}}`)
+	out, _, err := e.split("conditions", "get", "D001943")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "field\tvalue\ncondition_id\tD001943\ncondition_name\tBreast Neoplasms\ncategories\t[\"Neoplasms\",\"Skin\"]\nn_trials\t4021\ncondition_burden.dalys\t123.5\n\ndataset\ttitle\tentitled\ncondition-trials\tTrials\tyes\n"
+	if !strings.HasPrefix(out, want) {
+		t.Fatalf("%q\nwant prefix\n%q", out, want)
+	}
+}

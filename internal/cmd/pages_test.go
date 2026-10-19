@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/scientist-labs/pharmaobservatory-cli/internal/apierr"
+	"github.com/scientist-labs/pharmaobservatory-cli/internal/cmd/pages"
 )
 
 // rawBody has a column and a key the typed SDK model does not know, odd spacing and a trailing
@@ -284,7 +285,7 @@ func TestTypedDecodeFailureWarnsAndStillPrintsTheRawBody(t *testing.T) {
 	if out != "[1,2]\n" {
 		t.Fatalf("stdout must stay the raw body: %q", out)
 	}
-	if w := e.errBuf.String(); !strings.Contains(w, "warning: the SDK (v0.1.3)") || !strings.Contains(w, "SDK bug") {
+	if w := e.errBuf.String(); !strings.Contains(w, "warning: the SDK ("+pages.SDKVersion+")") || !strings.Contains(w, "SDK bug") {
 		t.Fatalf("stderr: %q", w)
 	}
 }

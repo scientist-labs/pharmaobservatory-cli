@@ -67,7 +67,8 @@ Manager). Where none is available, or with `PO_CREDENTIAL_STORE=file`, it lives 
 
 ## Commands
 
-One command group per object type (`biomarkers`, `cell-lines`, `companies`, `legal-entities`, `sites`),
+One command group per object type (`biomarkers`, `cell-lines`, `companies`, `conditions`, `legal-entities`,
+`sites`, `trials`),
 plus `datasets` for the catalog, generated from the API document. The shapes:
 
 ```sh
@@ -79,7 +80,8 @@ po datasets get <name>                             # one dataset's grain and col
 ```
 
 Real examples: `po companies get <id> sponsor-trials --scope group`, `po sites get <id> site-trials`,
-`po biomarkers get ESR1 biomarker-evidence`. Command and dataset names are the API's names with `-` for
+`po biomarkers get ESR1 biomarker-evidence`, `po trials get NCT01234567 trial-drugs`, `po conditions get
+D001943 condition-trials`. Command and dataset names are the API's names with `-` for
 `_`, and the API's own spelling works too (`po cell_lines list`, `po sites get <id> site_trials`). Ids
 are passed through verbatim. Put the id and dataset before any flags. `po <object> --help` lists the
 datasets; `po <object> get <id> <dataset> --help` lists a dataset's flags. A parameter named like a
