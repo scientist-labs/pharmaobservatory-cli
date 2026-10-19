@@ -1,4 +1,4 @@
-// Command po is the Pharma Observatory command line client.
+// Command pharma is the Pharma Observatory command line client.
 package main
 
 import (

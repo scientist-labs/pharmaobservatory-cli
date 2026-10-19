@@ -8,18 +8,18 @@ import (
 )
 
 func TestDirOrder(t *testing.T) {
-	t.Setenv("PO_CONFIG_DIR", "/x/po")
-	if d, _ := Dir(); d != "/x/po" {
+	t.Setenv("PHARMA_CONFIG_DIR", "/x/pharma")
+	if d, _ := Dir(); d != "/x/pharma" {
 		t.Fatal(d)
 	}
-	t.Setenv("PO_CONFIG_DIR", "")
+	t.Setenv("PHARMA_CONFIG_DIR", "")
 	t.Setenv("XDG_CONFIG_HOME", "/xdg")
-	if d, _ := Dir(); d != "/xdg/po" {
+	if d, _ := Dir(); d != "/xdg/pharma" {
 		t.Fatal(d)
 	}
 	t.Setenv("XDG_CONFIG_HOME", "")
 	t.Setenv("HOME", "/home/u")
-	if d, _ := Dir(); d != "/home/u/.config/po" && !strings.HasSuffix(d, filepath.Join(".config", "po")) {
+	if d, _ := Dir(); d != "/home/u/.config/pharma" && !strings.HasSuffix(d, filepath.Join(".config", "pharma")) {
 		t.Fatal(d)
 	}
 }
@@ -61,14 +61,14 @@ func TestCustomProfileDefaultsToStagingClient(t *testing.T) {
 }
 
 func TestSelectOrder(t *testing.T) {
-	t.Setenv("PO_PROFILE", "")
+	t.Setenv("PHARMA_PROFILE", "")
 	if SelectName("", File{}) != "prod" {
 		t.Fatal("default")
 	}
 	if SelectName("", File{DefaultProfile: "staging"}) != "staging" {
 		t.Fatal("file default")
 	}
-	t.Setenv("PO_PROFILE", "env")
+	t.Setenv("PHARMA_PROFILE", "env")
 	if SelectName("", File{DefaultProfile: "staging"}) != "env" {
 		t.Fatal("env")
 	}
@@ -78,7 +78,7 @@ func TestSelectOrder(t *testing.T) {
 }
 
 func TestSaveLoad(t *testing.T) {
-	t.Setenv("PO_CONFIG_DIR", filepath.Join(t.TempDir(), "po"))
+	t.Setenv("PHARMA_CONFIG_DIR", filepath.Join(t.TempDir(), "pharma"))
 	if f, err := Load(); err != nil || len(f.Profiles) != 0 {
 		t.Fatal(f, err)
 	}

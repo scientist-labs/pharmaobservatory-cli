@@ -69,7 +69,7 @@ type Env struct {
 type Settings struct{ JSON, CSV, All, Quiet bool }
 
 // Build returns the top-level commands for every page. A page whose slug collides with a
-// top-level command is registered only under `po page <slug>`.
+// top-level command is registered only under `pharma page <slug>`.
 func Build(e *Env) []*cobra.Command { return buildFrom(e, allPages()) }
 
 // filterFlag is the hand-written flag every dataset read gets (an operation that pages, so it

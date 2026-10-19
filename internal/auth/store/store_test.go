@@ -52,7 +52,7 @@ func cred() Credential {
 }
 
 func TestFileStoreRoundTripAndMode(t *testing.T) {
-	dir := filepath.Join(t.TempDir(), "po")
+	dir := filepath.Join(t.TempDir(), "pharma")
 	s := FileStore{Dir: dir}
 	if _, err := s.Get("prod"); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("empty store: %v", err)
@@ -128,7 +128,7 @@ func TestKeychainStore(t *testing.T) {
 	if err := s.Delete("prod"); err != nil {
 		t.Fatalf("delete absent: %v", err)
 	}
-	kr.M["po/bad"] = "{nope"
+	kr.M["pharma/bad"] = "{nope"
 	if _, err := s.Get("bad"); err == nil {
 		t.Fatal("bad blob accepted")
 	}
@@ -142,8 +142,8 @@ func TestKeychainStore(t *testing.T) {
 }
 
 func TestOpenSelection(t *testing.T) {
-	t.Setenv("PO_CONFIG_DIR", t.TempDir())
-	t.Setenv("PO_CREDENTIAL_STORE", "")
+	t.Setenv("PHARMA_CONFIG_DIR", t.TempDir())
+	t.Setenv("PHARMA_CREDENTIAL_STORE", "")
 	kr := NewFake()
 	if s, _ := Open(kr, "prod"); s.Name() != "keychain" {
 		t.Fatalf("working keychain: %s", s.Name())
@@ -156,16 +156,16 @@ func TestOpenSelection(t *testing.T) {
 		t.Fatalf("broken keychain: %s", s.Name())
 	}
 	kr.Err = nil
-	t.Setenv("PO_CREDENTIAL_STORE", "file")
+	t.Setenv("PHARMA_CREDENTIAL_STORE", "file")
 	if s, _ := Open(kr, "prod"); s.Name() != "file" {
-		t.Fatal("PO_CREDENTIAL_STORE=file ignored")
+		t.Fatal("PHARMA_CREDENTIAL_STORE=file ignored")
 	}
 }
 
 func TestOpenPrefersFileWhenLoginFellBack(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv("PO_CONFIG_DIR", dir)
-	t.Setenv("PO_CREDENTIAL_STORE", "")
+	t.Setenv("PHARMA_CONFIG_DIR", dir)
+	t.Setenv("PHARMA_CREDENTIAL_STORE", "")
 	kr := NewFake()
 	_ = FileStore{Dir: dir}.Set("prod", cred())
 	if s, _ := Open(kr, "prod"); s.Name() != "file" {

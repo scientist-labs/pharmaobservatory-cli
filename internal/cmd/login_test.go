@@ -91,9 +91,9 @@ type env struct {
 
 func newEnv(t *testing.T) *env {
 	e := &env{t: t, kr: &fakeKR{m: map[string]string{}}, clock: time.Date(2026, 10, 18, 12, 0, 0, 0, time.UTC)}
-	t.Setenv("PO_CONFIG_DIR", filepath.Join(t.TempDir(), "po"))
-	t.Setenv("PO_CREDENTIAL_STORE", "")
-	t.Setenv("PO_PROFILE", "")
+	t.Setenv("PHARMA_CONFIG_DIR", filepath.Join(t.TempDir(), "pharma"))
+	t.Setenv("PHARMA_CREDENTIAL_STORE", "")
+	t.Setenv("PHARMA_PROFILE", "")
 	mux := http.NewServeMux()
 	mux.HandleFunc("/.well-known/oauth-protected-resource/api/v1", func(w http.ResponseWriter, _ *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]any{"authorization_servers": []string{e.srv.URL}, "scopes_supported": []string{"example:api"}})
@@ -366,7 +366,7 @@ func assertNoLogin(t *testing.T, e *env) {
 	if len(e.kr.m) != 0 {
 		t.Fatal("keychain holds a credential")
 	}
-	if _, err := os.Stat(filepath.Join(os.Getenv("PO_CONFIG_DIR"), "credentials.json")); err == nil {
+	if _, err := os.Stat(filepath.Join(os.Getenv("PHARMA_CONFIG_DIR"), "credentials.json")); err == nil {
 		t.Fatal("credentials file written")
 	}
 }
@@ -563,7 +563,7 @@ func TestFileFallbackWhenKeychainBroken(t *testing.T) {
 	if err != nil || !strings.Contains(out, "stored in the file") {
 		t.Fatalf("%v %s", err, out)
 	}
-	p := filepath.Join(os.Getenv("PO_CONFIG_DIR"), "credentials.json")
+	p := filepath.Join(os.Getenv("PHARMA_CONFIG_DIR"), "credentials.json")
 	fi, err := os.Stat(p)
 	if err != nil {
 		t.Fatal(err)
@@ -595,7 +595,7 @@ func TestLoginFallsBackWhenKeychainSetFailsAfterProbe(t *testing.T) {
 	if err := root.Execute(); err != nil || !strings.Contains(out.String(), "Keychain unavailable") {
 		t.Fatalf("%v %s", err, out.String())
 	}
-	if _, err := os.Stat(filepath.Join(os.Getenv("PO_CONFIG_DIR"), "credentials.json")); err != nil {
+	if _, err := os.Stat(filepath.Join(os.Getenv("PHARMA_CONFIG_DIR"), "credentials.json")); err != nil {
 		t.Fatal("fallback file missing")
 	}
 	// whoami finds the fallback file even though the keychain probe works.
@@ -614,7 +614,7 @@ func (s *setFails) Set(_, _, _ string) error { return errors.New("keychain locke
 
 func TestPOCredentialStoreFile(t *testing.T) {
 	e := newEnv(t)
-	t.Setenv("PO_CREDENTIAL_STORE", "file")
+	t.Setenv("PHARMA_CREDENTIAL_STORE", "file")
 	e.stdin = "c\n"
 	out, err := e.login("--no-browser")
 	if err != nil || !strings.Contains(out, "stored in the file") || len(e.kr.m) != 0 {
@@ -627,10 +627,10 @@ func TestWhoamiProfileOriginMismatchRefusedLocally(t *testing.T) {
 	e.stdin = "c\n"
 	_, _ = e.login("--no-browser")
 	// Same profile name, now pointing at a different origin: the stored aud no longer matches.
-	f := filepath.Join(os.Getenv("PO_CONFIG_DIR"), "config.yml")
+	f := filepath.Join(os.Getenv("PHARMA_CONFIG_DIR"), "config.yml")
 	_ = os.WriteFile(f, []byte("profiles:\n  local:\n    origin: "+e.srv.URL+"\n    client_id: client_other\n"), 0o600)
 	_, err := e.run("whoami", "--profile", "local")
-	if apierr.ExitCode(err) != apierr.ExitAuth || e.whoamis != 0 || !strings.Contains(err.Error(), "po login --profile local") {
+	if apierr.ExitCode(err) != apierr.ExitAuth || e.whoamis != 0 || !strings.Contains(err.Error(), "pharma login --profile local") {
 		t.Fatalf("%v whoamis=%d", err, e.whoamis)
 	}
 }
@@ -689,7 +689,7 @@ func TestRefreshRejectedAsksForLogin(t *testing.T) {
 	e.clock = e.clock.Add(time.Hour)
 	e.refuse = true
 	_, err := e.run("whoami", "--profile", "local")
-	if apierr.ExitCode(err) != apierr.ExitAuth || !strings.Contains(err.Error(), "po login --profile local") || e.whoamis != 0 {
+	if apierr.ExitCode(err) != apierr.ExitAuth || !strings.Contains(err.Error(), "pharma login --profile local") || e.whoamis != 0 {
 		t.Fatalf("%v whoamis=%d", err, e.whoamis)
 	}
 }

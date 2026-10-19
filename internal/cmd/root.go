@@ -29,7 +29,7 @@ func NewRootWith(d Deps) *cobra.Command {
 		Run: func(cmd *cobra.Command, args []string) { _ = cmd.Help() },
 	}
 	root.SetFlagErrorFunc(func(_ *cobra.Command, err error) error { return apierr.Usage(err) })
-	root.PersistentFlags().StringVar(&g.profile, "profile", "", "profile to use (default: $PO_PROFILE, config default_profile, then prod)")
+	root.PersistentFlags().StringVar(&g.profile, "profile", "", "profile to use (default: $PHARMA_PROFILE, config default_profile, then prod)")
 	root.PersistentFlags().StringVar(&g.apiBase, "api-base", "", "send requests here instead of the profile origin (audience unchanged)")
 	root.PersistentFlags().BoolVar(&g.json, "json", false, "print the raw response body (the envelope carries the attribution)")
 	root.PersistentFlags().BoolVar(&g.csv, "csv", false, "print CSV built from the response columns (a get prints its identity rows only); source credits follow the rows as `# Source: ...` comment lines, which most readers skip (pandas: comment='#')")

@@ -63,7 +63,7 @@ func TestQueryPostsTheSQLAndRendersPositionalRows(t *testing.T) {
 	e := loggedIn(t)
 	reqs := queryServer(e, nil)
 	sql := "SELECT biomarker_kind, count(*) AS n FROM biomarkers GROUP BY 1"
-	out, err := e.po("query", sql)
+	out, err := e.pharma("query", sql)
 	if err != nil {
 		t.Fatalf("%v\n%s", err, out)
 	}
@@ -88,7 +88,7 @@ func TestQueryPostsTheSQLAndRendersPositionalRows(t *testing.T) {
 		"notice: Only the first 2 rows are shown.",
 		"withheld columns: secret_col",
 		"as of 2026-10-18 (profile local)",
-		"showing 2 of 3 stored; next: po query --result r-1 --cursor c1; result r-1",
+		"showing 2 of 3 stored; next: pharma query --result r-1 --cursor c1; result r-1",
 	} {
 		if !strings.Contains(stderr, s) {
 			t.Errorf("stderr lacks %q:\n%s", s, stderr)
@@ -102,7 +102,7 @@ func TestQueryPostsTheSQLAndRendersPositionalRows(t *testing.T) {
 func TestQueryQuietKeepsCreditAndNotice(t *testing.T) {
 	e := loggedIn(t)
 	queryServer(e, nil)
-	if out, err := e.po("query", "SELECT 1 FROM biomarkers", "--quiet"); err != nil {
+	if out, err := e.pharma("query", "SELECT 1 FROM biomarkers", "--quiet"); err != nil {
 		t.Fatalf("%v\n%s", err, out)
 	}
 	stderr := e.errBuf.String()
@@ -118,14 +118,14 @@ func TestQueryReadsStdinForDash(t *testing.T) {
 	e := loggedIn(t)
 	reqs := queryServer(e, nil)
 	e.stdin = "  SELECT count(*)\nFROM biomarkers\n\n"
-	if out, err := e.po("query", "-"); err != nil {
+	if out, err := e.pharma("query", "-"); err != nil {
 		t.Fatalf("%v\n%s", err, out)
 	}
 	if !strings.Contains((*reqs)[0].body, `"SELECT count(*)\nFROM biomarkers"`) {
 		t.Fatalf("body: %s", (*reqs)[0].body)
 	}
 	e.stdin = "  \n"
-	if _, err := e.po("query", "-"); apierr.ExitCode(err) != apierr.ExitUsage {
+	if _, err := e.pharma("query", "-"); apierr.ExitCode(err) != apierr.ExitUsage {
 		t.Fatalf("empty stdin: %v", err)
 	}
 }
@@ -133,7 +133,7 @@ func TestQueryReadsStdinForDash(t *testing.T) {
 func TestQueryJSONIsTheRawBody(t *testing.T) {
 	e := loggedIn(t)
 	queryServer(e, nil)
-	out, err := e.po("query", "SELECT 1 FROM biomarkers", "--json")
+	out, err := e.pharma("query", "SELECT 1 FROM biomarkers", "--json")
 	if err != nil || out != queryBody+"\n" {
 		t.Fatalf("%v\n%q", err, out)
 	}
@@ -142,7 +142,7 @@ func TestQueryJSONIsTheRawBody(t *testing.T) {
 func TestQueryCSVHeaderIsColumnNamesAndCreditsTrail(t *testing.T) {
 	e := loggedIn(t)
 	queryServer(e, nil)
-	out, err := e.po("query", "SELECT 1 FROM biomarkers", "--csv")
+	out, err := e.pharma("query", "SELECT 1 FROM biomarkers", "--csv")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -154,7 +154,7 @@ func TestQueryCSVHeaderIsColumnNamesAndCreditsTrail(t *testing.T) {
 func TestQueryResultPagesAStoredResult(t *testing.T) {
 	e := loggedIn(t)
 	reqs := queryServer(e, map[string]func(http.ResponseWriter){"c 1/x": page(resultBody("", `[["x",1]]`))})
-	out, err := e.po("query", "--result", "r/1", "--cursor", "c 1/x")
+	out, err := e.pharma("query", "--result", "r/1", "--cursor", "c 1/x")
 	if err != nil {
 		t.Fatalf("%v\n%s", err, out)
 	}
@@ -169,7 +169,7 @@ func TestQueryResultPagesAStoredResult(t *testing.T) {
 func TestQueryAllWalksTheStoredResult(t *testing.T) {
 	e := loggedIn(t)
 	reqs := queryServer(e, map[string]func(http.ResponseWriter){"c1": page(resultBody("", `[["last",3]]`))})
-	out, err := e.po("query", "SELECT 1 FROM biomarkers", "--all")
+	out, err := e.pharma("query", "SELECT 1 FROM biomarkers", "--all")
 	if err != nil {
 		t.Fatalf("%v\n%s", err, out)
 	}
@@ -190,7 +190,7 @@ func TestQueryAllStopsCleanlyOnResultExpired(t *testing.T) {
 		w.WriteHeader(410)
 		_, _ = w.Write([]byte(`{"error_code":"RESULT_EXPIRED","message":"That result is gone.","hint":"Run the query again.","docs":"https://example.test/docs"}`))
 	}})
-	out, err := e.po("query", "SELECT 1 FROM biomarkers", "--all")
+	out, err := e.pharma("query", "SELECT 1 FROM biomarkers", "--all")
 	if apierr.ExitCode(err) != apierr.ExitPartial || !strings.Contains(err.Error(), "RESULT_EXPIRED: That result is gone.; hint: Run the query again.") {
 		t.Fatalf("exit %d: %v", apierr.ExitCode(err), err)
 	}
@@ -205,7 +205,7 @@ func TestQueryAllStopsOnAGenerationChange(t *testing.T) {
 		w.WriteHeader(409)
 		_, _ = w.Write([]byte(`{"error_code":"GENERATION_CHANGED","message":"The warehouse was rebuilt.","hint":null,"docs":"d"}`))
 	}})
-	_, err := e.po("query", "SELECT 1 FROM biomarkers", "--all")
+	_, err := e.pharma("query", "SELECT 1 FROM biomarkers", "--all")
 	if apierr.ExitCode(err) != apierr.ExitPartial || !strings.Contains(err.Error(), "The warehouse was rebuilt.") {
 		t.Fatalf("exit %d: %v", apierr.ExitCode(err), err)
 	}
@@ -214,7 +214,7 @@ func TestQueryAllStopsOnAGenerationChange(t *testing.T) {
 func TestQueryAllRefusesARepeatedCursor(t *testing.T) {
 	e := loggedIn(t)
 	reqs := queryServer(e, map[string]func(http.ResponseWriter){"c1": page(resultBody("c1", `[["again",1]]`))})
-	_, err := e.po("query", "SELECT 1 FROM biomarkers", "--all")
+	_, err := e.pharma("query", "SELECT 1 FROM biomarkers", "--all")
 	if apierr.ExitCode(err) != apierr.ExitPartial || !strings.Contains(err.Error(), "already fetched") || len(*reqs) != 2 {
 		t.Fatalf("exit %d: %v (%d requests)", apierr.ExitCode(err), err, len(*reqs))
 	}
@@ -230,7 +230,7 @@ func TestQueryAllStopsAtThePageCap(t *testing.T) {
 		pg[fmt.Sprintf("c%d", i)] = page(resultBody(fmt.Sprintf("c%d", i+1), `[["p",1]]`))
 	}
 	reqs := queryServer(e, pg)
-	_, err := e.po("query", "SELECT 1 FROM biomarkers", "--all")
+	_, err := e.pharma("query", "SELECT 1 FROM biomarkers", "--all")
 	if apierr.ExitCode(err) != apierr.ExitPartial || !strings.Contains(err.Error(), "3 page limit") || len(*reqs) != 3 {
 		t.Fatalf("exit %d: %v (%d requests)", apierr.ExitCode(err), err, len(*reqs))
 	}
@@ -263,7 +263,7 @@ func TestQueryTeachingErrorsMapToTheExitTable(t *testing.T) {
 	for _, c := range cases {
 		e := loggedIn(t)
 		e.api = refuse(c.status, "", c.body)
-		_, err := e.po("query", "SELECT nme FROM biomarkers")
+		_, err := e.pharma("query", "SELECT nme FROM biomarkers")
 		if err == nil || apierr.ExitCode(err) != c.code || !strings.Contains(err.Error(), c.want) {
 			t.Errorf("%d %s: exit %d err %v", c.status, c.body, apierr.ExitCode(err), err)
 			continue
@@ -273,7 +273,7 @@ func TestQueryTeachingErrorsMapToTheExitTable(t *testing.T) {
 		}
 		e2 := loggedIn(t)
 		e2.api = refuse(c.status, "", c.body)
-		out, _ := e2.po("query", "SELECT nme FROM biomarkers", "--json")
+		out, _ := e2.pharma("query", "SELECT nme FROM biomarkers", "--json")
 		if out != c.body+"\n" {
 			t.Errorf("--json must print the server body unchanged: %q", out)
 		}
@@ -290,7 +290,7 @@ func TestQuerySanitizesServerText(t *testing.T) {
 		_, _ = w.Write([]byte(`{"columns":[{"name":"na\u001b[31mme","type":"text"}],"rows":[["a\u001b]8;;http://x\u0007b\u202ec","=cmd\u0007"]],` +
 			`"result_id":"r\u001b[2J1","next_cursor":"c\u0007","attribution":[{"name":"Src\u001b[0m","href":"h"}],"notice":"no\u001b[1mtice\nline"}`))
 	}
-	out, err := e.po("query", "SELECT 1 FROM biomarkers")
+	out, err := e.pharma("query", "SELECT 1 FROM biomarkers")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -306,7 +306,7 @@ func TestQuerySanitizesServerText(t *testing.T) {
 	}
 	e2 := loggedIn(t)
 	e2.api = refuse(400, "", "{\"error_code\":\"PARSE_ERROR\",\"message\":\"bad\\u001b[2J\\nsql\",\"hint\":\"h\\u0007int\",\"docs\":\"d\"}")
-	_, err = e2.po("query", "SELECT")
+	_, err = e2.pharma("query", "SELECT")
 	if strings.ContainsAny(err.Error(), "\x1b\x07\n") || !strings.Contains(err.Error(), "PARSE_ERROR: bad sql; hint: hint") {
 		t.Fatalf("%q", err)
 	}
@@ -325,7 +325,7 @@ func TestQueryExpiredTokenRefreshesAndResendsTheSQL(t *testing.T) {
 		}
 		_, _ = w.Write([]byte(queryBody))
 	}
-	if out, err := e.po("query", "SELECT 1 FROM biomarkers"); err != nil {
+	if out, err := e.pharma("query", "SELECT 1 FROM biomarkers"); err != nil {
 		t.Fatalf("%v\n%s", err, out)
 	}
 	if len(bodies) != 2 || bodies[0] != bodies[1] || !strings.Contains(bodies[1], "SELECT 1") || e.apiAuth[0] == e.apiAuth[1] {
@@ -344,7 +344,7 @@ func TestQueryUsageErrors(t *testing.T) {
 	} {
 		e := loggedIn(t)
 		n := len(e.seen)
-		_, err := e.po(args...)
+		_, err := e.pharma(args...)
 		if apierr.ExitCode(err) != apierr.ExitUsage {
 			t.Errorf("%v: exit %d %v", args, apierr.ExitCode(err), err)
 		}
@@ -356,11 +356,11 @@ func TestQueryUsageErrors(t *testing.T) {
 
 func TestQueryNotLoggedInIsAuth(t *testing.T) {
 	e := loggedIn(t)
-	if _, err := e.po("logout"); err != nil {
+	if _, err := e.pharma("logout"); err != nil {
 		t.Fatal(err)
 	}
 	n := len(e.seen)
-	_, err := e.po("query", "SELECT 1")
+	_, err := e.pharma("query", "SELECT 1")
 	if apierr.ExitCode(err) != apierr.ExitAuth || !strings.Contains(err.Error(), "not logged in to local") || len(e.seen) != n {
 		t.Fatalf("exit %d: %v", apierr.ExitCode(err), err)
 	}
@@ -372,7 +372,7 @@ func TestQueryAllRepeatedCursorWithEscapesLeavesStderrClean(t *testing.T) {
 		// every answer, the POST and each result page, names the same escape-laden cursor
 		_, _ = w.Write([]byte(strings.Replace(resultBody("NEXT", `[["x",1]]`), `"NEXT"`, `"c\u001b[2J\u0007"`, 1)))
 	}
-	_, err := e.po("query", "SELECT 1 FROM biomarkers", "--all")
+	_, err := e.pharma("query", "SELECT 1 FROM biomarkers", "--all")
 	if apierr.ExitCode(err) != apierr.ExitPartial || !strings.Contains(err.Error(), "already fetched (c)") {
 		t.Fatalf("exit %d err %q", apierr.ExitCode(err), err)
 	}

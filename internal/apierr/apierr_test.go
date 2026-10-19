@@ -32,9 +32,9 @@ func TestFromResponse(t *testing.T) {
 		code   int
 		want   string
 	}{
-		{401, `{"error":"invalid_audience"}`, ExitAuth, "po login --profile prod"},
-		{401, `{"error":"expired_token"}`, ExitAuth, "po login --profile prod"},
-		{401, `{"error":"missing_token"}`, ExitAuth, "po login --profile prod"},
+		{401, `{"error":"invalid_audience"}`, ExitAuth, "pharma login --profile prod"},
+		{401, `{"error":"expired_token"}`, ExitAuth, "pharma login --profile prod"},
+		{401, `{"error":"missing_token"}`, ExitAuth, "pharma login --profile prod"},
 		{401, `{"error":"invalid_token"}`, ExitAuth, "invalid_token"},
 		{403, `{"error":"missing_role","role":"example:api"}`, ExitForbidden, "role example:api"},
 		{403, `{"error":"missing_role"}`, ExitForbidden, "missing_role"},

@@ -34,7 +34,7 @@ func TestHTTPCustomOriginRefused(t *testing.T) {
 
 func TestHTTPAPIBaseRefused(t *testing.T) {
 	e := loggedIn(t)
-	_, err := e.po("whoami", "--api-base", "http://evil.example.com")
+	_, err := e.pharma("whoami", "--api-base", "http://evil.example.com")
 	if apierr.ExitCode(err) != apierr.ExitUsage {
 		t.Fatalf("%v", err)
 	}
@@ -128,7 +128,7 @@ func TestLogoutClearsKeychainAndFile(t *testing.T) {
 	}
 	cred := e.stored()
 	// A stale copy in the file fallback, as after a login that once fell back.
-	fs := store.FileStore{Dir: os.Getenv("PO_CONFIG_DIR")}
+	fs := store.FileStore{Dir: os.Getenv("PHARMA_CONFIG_DIR")}
 	if err := fs.Set("local", cred); err != nil {
 		t.Fatal(err)
 	}
@@ -148,7 +148,7 @@ func TestLogoutClearsKeychainAndFile(t *testing.T) {
 	if _, err := fs.Get("other"); err != nil {
 		t.Fatalf("logout removed another profile: %v", err)
 	}
-	if b, _ := os.ReadFile(filepath.Join(os.Getenv("PO_CONFIG_DIR"), "credentials.json")); strings.Contains(string(b), cred.RefreshToken) && !strings.Contains(string(b), "other") {
+	if b, _ := os.ReadFile(filepath.Join(os.Getenv("PHARMA_CONFIG_DIR"), "credentials.json")); strings.Contains(string(b), cred.RefreshToken) && !strings.Contains(string(b), "other") {
 		t.Fatal("file lost the other profile")
 	}
 	out, err = e.run("logout", "--profile", "local")
@@ -163,7 +163,7 @@ func TestLogoutFileOnlyWhenKeychainBroken(t *testing.T) {
 	if _, err := e.login("--no-browser"); err != nil {
 		t.Fatal(err)
 	}
-	fs := store.FileStore{Dir: os.Getenv("PO_CONFIG_DIR")}
+	fs := store.FileStore{Dir: os.Getenv("PHARMA_CONFIG_DIR")}
 	if err := fs.Set("local", e.stored()); err != nil {
 		t.Fatal(err)
 	}
@@ -211,11 +211,11 @@ func TestLogoutFileStoreLeavesTheKeychainAlone(t *testing.T) {
 		t.Fatalf("%v %s", err, out)
 	}
 	cred := e.stored()
-	fs := store.FileStore{Dir: os.Getenv("PO_CONFIG_DIR")}
+	fs := store.FileStore{Dir: os.Getenv("PHARMA_CONFIG_DIR")}
 	if err := fs.Set("local", cred); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("PO_CREDENTIAL_STORE", "file")
+	t.Setenv("PHARMA_CREDENTIAL_STORE", "file")
 	if out, err := e.run("logout", "--profile", "local"); err != nil {
 		t.Fatalf("%v %s", err, out)
 	}

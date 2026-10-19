@@ -53,7 +53,7 @@ func (realKeyring) Delete(s, u string) error        { return keyring.Delete(s, u
 // SystemKeyring is the real OS keychain.
 func SystemKeyring() Keyring { return realKeyring{} }
 
-const service = "po"
+const service = "pharma"
 
 // KeychainStore stores one JSON blob per profile in the keychain.
 type KeychainStore struct{ KR Keyring }
@@ -173,7 +173,7 @@ func (s FileStore) Delete(profile string) error {
 	return s.write(m)
 }
 
-// Open picks the store for one profile. $PO_CREDENTIAL_STORE=file forces the file. Otherwise the
+// Open picks the store for one profile. $PHARMA_CREDENTIAL_STORE=file forces the file. Otherwise the
 // keychain is used when a probe shows it works; if it does not (no Secret Service, locked, no
 // D-Bus) the file is used. When the keychain works but holds nothing for this profile while the
 // file does (a login that had to fall back), the file is used. The choice is made once per
@@ -184,7 +184,7 @@ func Open(kr Keyring, profile string) (Store, error) {
 		return nil, err
 	}
 	file := FileStore{Dir: dir}
-	if os.Getenv("PO_CREDENTIAL_STORE") == "file" || kr == nil {
+	if os.Getenv("PHARMA_CREDENTIAL_STORE") == "file" || kr == nil {
 		return file, nil
 	}
 	kc := KeychainStore{KR: kr}
@@ -209,7 +209,7 @@ func All(kr Keyring, profile string) ([]Store, error) {
 		return nil, err
 	}
 	file := FileStore{Dir: dir}
-	if os.Getenv("PO_CREDENTIAL_STORE") == "file" || kr == nil {
+	if os.Getenv("PHARMA_CREDENTIAL_STORE") == "file" || kr == nil {
 		return []Store{file}, nil
 	}
 	return []Store{KeychainStore{KR: kr}, file}, nil

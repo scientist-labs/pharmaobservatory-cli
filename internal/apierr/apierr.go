@@ -15,9 +15,9 @@ import (
 )
 
 // Bin is the executable name quoted in remedies, help text, `version` and the User-Agent. It is the
-// one place Go reads the name from: GoReleaser sets it with -X (see .goreleaser.yml), and "po" is
+// one place Go reads the name from: GoReleaser sets it with -X (see .goreleaser.yml), and "pharma" is
 // only the value of a plain go build.
-var Bin = "po"
+var Bin = "pharma"
 
 // MaxWait is the longest --wait will sleep for a Retry-After. A longer one is reported, not waited.
 const MaxWait = 2 * time.Minute

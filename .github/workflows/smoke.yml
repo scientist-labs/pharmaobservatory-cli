@@ -56,8 +56,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
-      PO_CREDENTIAL_STORE: file
-      PO_PROFILE: staging
+      PHARMA_CREDENTIAL_STORE: file
+      PHARMA_PROFILE: staging
     steps:
       - name: Gate on SMOKE_SECRETS_TOKEN
         id: gate
@@ -99,8 +99,8 @@ jobs:
           mkdir -p "$RUNNER_TEMP/cli-config"
           printf '%s' "$SMOKE_STAGING_CREDENTIAL" >"$RUNNER_TEMP/cli-config/credentials.json"
           cp "$RUNNER_TEMP/cli-config/credentials.json" "$RUNNER_TEMP/credentials.orig.json"
-          jq -e --arg p "$PO_PROFILE" '.[$p].refresh_token | length > 0' "$RUNNER_TEMP/credentials.orig.json" >/dev/null
-          echo "PO_CONFIG_DIR=$RUNNER_TEMP/cli-config" >>"$GITHUB_ENV"
+          jq -e --arg p "$PHARMA_PROFILE" '.[$p].refresh_token | length > 0' "$RUNNER_TEMP/credentials.orig.json" >/dev/null
+          echo "PHARMA_CONFIG_DIR=$RUNNER_TEMP/cli-config" >>"$GITHUB_ENV"
           echo "SMOKE_OUT=$RUNNER_TEMP/smoke-out" >>"$GITHUB_ENV"
       - name: Smoke script
         if: steps.gate.outputs.has_token == 'true'
@@ -112,9 +112,9 @@ jobs:
           GH_TOKEN: ${{ secrets.SMOKE_SECRETS_TOKEN }}
         run: |
           set -euo pipefail
-          cur="$PO_CONFIG_DIR/credentials.json"
-          old="$(jq -r --arg p "$PO_PROFILE" '.[$p].refresh_token' "$RUNNER_TEMP/credentials.orig.json")"
-          new="$(jq -r --arg p "$PO_PROFILE" '.[$p].refresh_token // empty' "$cur")"
+          cur="$PHARMA_CONFIG_DIR/credentials.json"
+          old="$(jq -r --arg p "$PHARMA_PROFILE" '.[$p].refresh_token' "$RUNNER_TEMP/credentials.orig.json")"
+          new="$(jq -r --arg p "$PHARMA_PROFILE" '.[$p].refresh_token // empty' "$cur")"
           if [ -z "$new" ] || [ "$new" = "$old" ]; then
             echo "refresh token unchanged; nothing to write back"
             exit 0

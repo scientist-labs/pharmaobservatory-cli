@@ -2,14 +2,14 @@
 version: 2
 project_name: pharmaobservatory
 
-# THE EXECUTABLE NAME IS SET HERE (epic #4931 has not settled it; `po` for now). Archives, the build
+# THE EXECUTABLE NAME IS SET HERE (`pharma`, owner decision 2026-10-19). Archives, the build
 # output, the deb/rpm /usr/bin entry, the brew test and install, and, through the apierr.Bin ldflag
 # below, the root command, `version`, help and error text and the User-Agent all read BINARY_NAME. To
-# rename the executable change the next line. The module path, the cmd/po directory, the PO_*
-# environment variables, the config directory and the keychain service name are literals NOT derived
-# from it: see packaging/README.md for the full rename list.
+# rename the executable change the next line. The module path, the cmd/pharma directory, the PHARMA_*
+# environment variables, the config directory, the keychain service name, package_name and the formula
+# name are literals NOT derived from it: see packaging/README.md for the full rename list.
 env:
-  - BINARY_NAME=po
+  - BINARY_NAME=pharma
 
 before:
   hooks:
@@ -17,7 +17,7 @@ before:
 
 builds:
   - id: cli
-    main: ./cmd/po
+    main: ./cmd/pharma
     binary: "{{ .Env.BINARY_NAME }}"
     env:
       - CGO_ENABLED=0
@@ -75,13 +75,12 @@ signs:
       - ${artifact}
     output: true
 
-# deb and rpm. The package name is the project name (pharmaobservatory); the executable inside is
-# BINARY_NAME. The archive keyring ships in both so an upgrade carries a rotated key (design note,
+# deb and rpm. The package name is `pharma`, the same as the executable (BINARY_NAME). The archive keyring ships in both so an upgrade carries a rotated key (design note,
 # issue #1).
 nfpms:
   - id: packages
-    package_name: pharmaobservatory
-    file_name_template: "pharmaobservatory_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    package_name: pharma
+    file_name_template: "pharma_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
     ids: [cli]
     vendor: Scientist.com
     homepage: https://pharmaobservatory.com
@@ -98,14 +97,14 @@ nfpms:
         dst: /etc/pki/rpm-gpg/RPM-GPG-KEY-pharmaobservatory
         packager: rpm
 
-# Homebrew FORMULA named pharmaobservatory, pushed to the tap over SSH with the TAP_DEPLOY_KEY deploy
+# Homebrew FORMULA named pharma, pushed to the tap over SSH with the TAP_DEPLOY_KEY deploy
 # key. `brews` is soft-deprecated since GoReleaser v2.10 in favour of `homebrew_casks`, kept on
 # purpose: a formula installs on macOS and Linux with `brew install`, a cask is the macOS-oriented
 # replacement and would change the install command and drop the Linuxbrew path the issue requires.
 # Revisit when `brews` is removed in a GoReleaser major. Upload is skipped unless TAP_DEPLOY_KEY is
 # set, so a snapshot or credential-less run never touches the tap; the release workflow sets it.
 brews:
-  - name: pharmaobservatory
+  - name: pharma
     ids: [cli]
     homepage: https://pharmaobservatory.com
     description: Command-line client for the biomedical data platform
