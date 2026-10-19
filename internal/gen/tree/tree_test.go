@@ -311,3 +311,76 @@ func (a *CellLinesAPIService) CellLinesSiteTrialsExecute(r ApiCellLinesSiteTrial
 		t.Fatalf("cell_lines page:\n%s", page)
 	}
 }
+
+// fakeOp is SDK source for one parameterless GET, shaped like the generated code parseSDK reads.
+func fakeOp(service, method, path string, withID bool) string {
+	sig, pos := "ctx context.Context", ""
+	if withID {
+		sig, pos = "ctx context.Context, id string", ", id: id"
+	}
+	return `
+type Api` + method + `Request struct {
+	ctx        context.Context
+	ApiService *` + service + `
+	id         string
+}
+
+func (a *` + service + `) ` + method + `(` + sig + `) Api` + method + `Request {
+	return Api` + method + `Request{ApiService: a, ctx: ctx` + pos + `}
+}
+
+func (a *` + service + `) ` + method + `Execute(r Api` + method + `Request) (*http.Response, error) {
+	var localVarHTTPMethod = http.MethodGet
+	localVarPath := localBasePath + "` + path + `"
+	_ = localVarHTTPMethod
+	_ = localVarPath
+	return nil, nil
+}
+`
+}
+
+func appendFile(t *testing.T, dir, file, src string) {
+	t.Helper()
+	p := filepath.Join(dir, file)
+	b, err := os.ReadFile(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(p, append(b, []byte(src)...), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// Names that differ only by separators collide as a command (cell_lines and cell-lines) or as a Go
+// identifier (x_1 and x1): the generator refuses them by name instead of emitting broken code.
+func TestSeparatorCollisionsAreGeneratorErrors(t *testing.T) {
+	t.Run("dataset keys", func(t *testing.T) {
+		dir := fixture(t)
+		edit(t, dir, "api/openapi.yaml", "  /api/v1/whoami:", `  /api/v1/widgets/{id}/pa_rts:
+    get:
+      operationId: widgets.pa_rts
+      tags: [widgets]
+      parameters:
+      - {name: id, in: path, required: true, schema: {type: string}}
+  /api/v1/whoami:`)
+		appendFile(t, dir, "api_widgets.go", fakeOp("WidgetsAPIService", "WidgetsPaRts", "/api/v1/widgets/{id}/pa_rts", true))
+		_, err := Build(dir, "m", "v")
+		if err == nil || !strings.Contains(err.Error(), "/api/v1/widgets/{id}/parts") || !strings.Contains(err.Error(), "/api/v1/widgets/{id}/pa_rts") {
+			t.Fatalf("want an error naming both paths, got %v", err)
+		}
+	})
+	t.Run("object types", func(t *testing.T) {
+		dir := fixture(t)
+		edit(t, dir, "api/openapi.yaml", "  /api/v1/whoami:", `  /api/v1/widget_s:
+    get:
+      operationId: widget_s.list
+      tags: [widget_s]
+  /api/v1/whoami:`)
+		appendFile(t, dir, "api_widgets.go", "\ntype WidgetSAPIService service\n"+fakeOp("WidgetSAPIService", "WidgetSList", "/api/v1/widget_s", false))
+		edit(t, dir, "client.go", "WidgetsAPI *WidgetsAPIService", "WidgetsAPI *WidgetsAPIService\n\tWidgetSAPI *WidgetSAPIService")
+		_, err := Build(dir, "m", "v")
+		if err == nil || !strings.Contains(err.Error(), `"widget_s"`) || !strings.Contains(err.Error(), `"widgets"`) {
+			t.Fatalf("want an error naming both object types, got %v", err)
+		}
+	})
+}

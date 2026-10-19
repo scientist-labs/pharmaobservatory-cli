@@ -588,3 +588,50 @@ func TestAllRepeatedCursorWithEscapesLeavesStderrClean(t *testing.T) {
 		t.Fatalf("control text reached stderr: %q / %q", errOut, err)
 	}
 }
+
+// A record, attributes or attribute group that is not an object is reported by its JSON kind only:
+// the server's text never reaches the error line.
+func TestMalformedRecordShapeLeavesStderrClean(t *testing.T) {
+	hostile := `"\u001b[31mRED\u001b]8;;http://x\u0007L\nFAKE: line\u0000\u202eEVIL"`
+	for _, body := range []string{
+		`{"record":` + hostile + `}`,
+		`{"record":{"a":1},"attributes":` + hostile + `}`,
+		`{"record":{"a":1},"attributes":{"g":` + hostile + `}}`,
+	} {
+		e := loggedIn(t)
+		e.api = serve(body)
+		_, errOut, err := e.split("sites", "get", "s1")
+		if err == nil || !strings.Contains(err.Error(), "expected an object, got a string") {
+			t.Fatalf("%s: %v", body, err)
+		}
+		all := errOut + err.Error()
+		if strings.ContainsAny(all, "\x1b\x07\x00\u202e") || strings.Contains(all, "FAKE") || strings.Contains(all, "EVIL") {
+			t.Fatalf("server text reached stderr: %q", all)
+		}
+	}
+}
+
+// One --all run fetches at most MaxPages pages in all: a generation restart does not reset the cap.
+func TestPageCapHoldsAcrossAGenerationRestart(t *testing.T) {
+	old := pages.MaxPages
+	pages.MaxPages = 3
+	defer func() { pages.MaxPages = old }()
+	e := loggedIn(t)
+	calls := 0
+	e.api = func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		if calls == 2 {
+			w.WriteHeader(409)
+			_, _ = w.Write([]byte(`{"error_code":"GENERATION_CHANGED","message":"rebuilt","docs":"d"}`))
+			return
+		}
+		serve(page1(fmt.Sprintf("c%d", calls), "99"))(w, r)
+	}
+	_, errOut, err := e.split("biomarkers", "list", "--all")
+	if apierr.ExitCode(err) != apierr.ExitPartial || !strings.Contains(errOut, "3 page limit") {
+		t.Fatalf("exit %d err %v stderr %q", apierr.ExitCode(err), err, errOut)
+	}
+	if calls != 4 {
+		t.Fatalf("%d calls, want 4 (page 1, the 409, then 2 more pages to reach the cap of 3)", calls)
+	}
+}

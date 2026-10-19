@@ -256,7 +256,7 @@ func TestFilterFlagBuildsTheQueryAndRefusesReservedKeys(t *testing.T) {
 	if err != nil || q.Encode() != "kind=gene&kind=variant&n.gt=3" {
 		t.Fatalf("%v %s", err, q.Encode())
 	}
-	for _, bad := range []string{"novalue", "=x", "limit=5", "group_by.ne=x"} {
+	for _, bad := range []string{"novalue", "=x", "limit=5", "group_by.ne=x", "limit[]=5", " limit=5", "LIMIT=5", "Cursor.gt=x", "a[b]=1", "scope]=x"} {
 		fs := pflag.NewFlagSet("x", pflag.ContinueOnError)
 		fs.String("cursor", "", "")
 		addFilterFlag(&Op{Flags: fs})

@@ -50,6 +50,7 @@ func Build(dir, module, version string) (*Model, error) {
 	m := &Model{SDKModule: module, SDKVersion: version}
 	pages := map[string]bool{}
 	seen := map[string]string{}
+	pageNorm := map[string]string{}
 	for _, r := range refs {
 		page, kind, key, ok, err := classify(r)
 		if err != nil {
@@ -137,9 +138,15 @@ func Build(dir, module, version string) (*Model, error) {
 			op.Params = append(op.Params, Param{Name: n, Flag: flag, Desc: desc, Type: t,
 				Setter: s.Name, GoType: s.GoType, Define: def[0], Getter: def[1]})
 		}
-		id := fmt.Sprintf("%s|%s|%s", page, kind, key)
+		// Keyed on the command form with separators folded away: cell_lines and cell-lines are one
+		// command, and x_1 and x1 one Go identifier (X1), so either pair is a generator error.
+		if prev, dup := pageNorm[fold(page)]; dup && prev != page {
+			return nil, fmt.Errorf("object types %q and %q map to the same command or identifier (%s)", prev, page, Kebab(page))
+		}
+		pageNorm[fold(page)] = page
+		id := fmt.Sprintf("%s|%s|%s", fold(page), kind, fold(key))
 		if prev, dup := seen[id]; dup {
-			return nil, fmt.Errorf("GET %s and %s both map to %s", r.Path, prev, id)
+			return nil, fmt.Errorf("GET %s and %s map to the same command or identifier (%s %s %s)", prev, r.Path, Kebab(page), kind, Kebab(key))
 		}
 		seen[id] = r.Path
 		op.Escaped = kind == KindSection && PageReserved[Kebab(key)]
@@ -163,6 +170,10 @@ func Build(dir, module, version string) (*Model, error) {
 	})
 	return m, nil
 }
+
+// fold is a name with case and separators removed: two names that fold alike collide as a command
+// (Kebab) or as a generated Go identifier (pascal).
+func fold(s string) string { return strings.ToLower(strings.NewReplacer("-", "", "_", "").Replace(s)) }
 
 // CheckAllowlist fails when the unmapped (non-page) operations differ from the hand-mapped set.
 func CheckAllowlist(unmapped, allow []string) error {

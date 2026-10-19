@@ -264,7 +264,8 @@ func ordered(raw json.RawMessage) ([]field, error) {
 		return nil, err
 	}
 	if d, ok := t.(json.Delim); !ok || d != '{' {
-		return nil, fmt.Errorf("expected an object, got %v", t)
+		// Name only the JSON kind: the token is server text and this message reaches the terminal.
+		return nil, fmt.Errorf("expected an object, got %s", jsonKind(t))
 	}
 	var out []field
 	for dec.More() {
@@ -280,6 +281,26 @@ func ordered(raw json.RawMessage) ([]field, error) {
 		out = append(out, field{key: k, value: v})
 	}
 	return out, nil
+}
+
+// jsonKind names the kind of a JSON token without its value.
+func jsonKind(t json.Token) string {
+	switch v := t.(type) {
+	case json.Delim:
+		if v == '[' {
+			return "an array"
+		}
+		return "a delimiter"
+	case string:
+		return "a string"
+	case float64, json.Number:
+		return "a number"
+	case bool:
+		return "a boolean"
+	case nil:
+		return "null"
+	}
+	return "an unexpected value"
 }
 
 func decodeValue(raw json.RawMessage) (any, error) {

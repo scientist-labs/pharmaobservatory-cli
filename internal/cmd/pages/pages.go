@@ -100,10 +100,17 @@ func filters(fs *pflag.FlagSet) (url.Values, error) {
 	q := url.Values{}
 	for _, f := range raw {
 		k, v, ok := strings.Cut(f, "=")
+		k = strings.TrimSpace(k)
 		if !ok || k == "" {
-			return nil, apierr.Usage(fmt.Errorf("--filter wants column=value or column.op=value, got %q", f))
+			return nil, apierr.Usage(fmt.Errorf("--filter wants column=value or column.op=value, got %q", sanitize.Line(f)))
 		}
-		if col, _, _ := strings.Cut(k, "."); reservedQuery[col] {
+		// A column name never holds a bracket; refusing them closes the limit[]=5 spelling of a
+		// reserved key, and the reserved check compares the trimmed, lowercased column.
+		if strings.ContainsAny(k, "[]") {
+			return nil, apierr.Usage(fmt.Errorf("--filter key %q is not a column name (no brackets)", sanitize.Line(k)))
+		}
+		if col, _, _ := strings.Cut(k, "."); reservedQuery[strings.ToLower(col)] {
+			col = strings.ToLower(col)
 			return nil, apierr.Usage(fmt.Errorf("--filter cannot set %q; use --%s", col, strings.ReplaceAll(col, "_", "-")))
 		}
 		q.Add(k, v)
@@ -484,8 +491,10 @@ func (w *walker) render() error {
 		var gc *generationChanged
 		if errors.As(err, &gc) && w.set.All {
 			if !restarted {
+				// The page count is NOT reset: one --all run fetches at most MaxPages pages in
+				// all, restart included.
 				restarted, first, last, rows = true, nil, nil, nil
-				pages, seen = 0, map[string]bool{}
+				seen = map[string]bool{}
 				if origCursor != "" {
 					seen[origCursor] = true
 				}
