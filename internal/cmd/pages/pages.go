@@ -442,7 +442,7 @@ func (w *walker) render() error {
 			break
 		}
 		if seen[next] {
-			partial = "the server returned a cursor that was already fetched (" + next + "), so the walk would never end"
+			partial = "the server returned a cursor that was already fetched (" + sanitize.Line(next) + "), so the walk would never end"
 			break
 		}
 		if pages >= MaxPages {

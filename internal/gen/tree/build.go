@@ -31,7 +31,7 @@ var PageReserved = map[string]bool{"list": true, "get": true, "help": true, "com
 // registered only as `po page <slug>`.
 var TopReserved = map[string]bool{
 	"login": true, "logout": true, "whoami": true, "version": true, "config": true, "auth": true,
-	"api": true, "exit-codes": true, "help": true, "completion": true, "get": true, "list": true, "page": true,
+	"api": true, "query": true, "exit-codes": true, "help": true, "completion": true, "get": true, "list": true, "page": true,
 }
 
 var kindOrder = map[string]int{KindList: 0, KindGet: 1, KindIDSection: 2, KindSection: 3}

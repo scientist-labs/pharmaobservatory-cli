@@ -469,3 +469,15 @@ func TestAllStopsAtThePageCeiling(t *testing.T) {
 		t.Fatalf("stderr %q", errOut)
 	}
 }
+
+func TestAllRepeatedCursorWithEscapesLeavesStderrClean(t *testing.T) {
+	e := loggedIn(t)
+	e.api = serve(page1(`c\u001b[2J\u0007`, "99", "exact"))
+	_, errOut, err := e.split("biomarkers", "list", "--all")
+	if apierr.ExitCode(err) != apierr.ExitPartial || !strings.Contains(err.Error(), "already fetched (c)") {
+		t.Fatalf("exit %d err %q", apierr.ExitCode(err), err)
+	}
+	if strings.ContainsAny(errOut+err.Error(), "\x1b\x07") {
+		t.Fatalf("control text reached stderr: %q / %q", errOut, err)
+	}
+}

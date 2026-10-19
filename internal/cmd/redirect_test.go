@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -32,7 +33,14 @@ type redirEnv struct {
 	clock  time.Time
 	kr     *fakeKR
 	tokens int
+	// otherAddr, when set, is where a dial to otherHost lands: a second origin for cross-origin
+	// redirects.
+	otherAddr string
 }
+
+// otherHost is a name the httptest certificate is valid for, so a redirect to it completes TLS
+// while being a different origin (Go compares host names, not ports, when it drops credentials).
+const otherHost = "example.com"
 
 func newRedirEnv(t *testing.T) *redirEnv {
 	r := &redirEnv{t: t, bounce: map[string]string{}, kr: &fakeKR{m: map[string]string{}}, clock: time.Date(2026, 10, 18, 12, 0, 0, 0, time.UTC)}
@@ -81,6 +89,9 @@ func (r *redirEnv) run(stdin string, args ...string) (string, error) {
 	tr.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
 		if strings.HasPrefix(addr, sinkHost+":") {
 			addr = sinkAddr
+		}
+		if r.otherAddr != "" && strings.HasPrefix(addr, otherHost+":") {
+			addr = r.otherAddr
 		}
 		return dial(ctx, network, addr)
 	}
@@ -147,6 +158,22 @@ func TestRedirectToHTTPIsRefusedEverywhere(t *testing.T) {
 		r.bounce["/api/v1/biomarkers"] = sinkURL(r) + "/x"
 		r.refused(r.run("", "biomarkers", "list", "--profile", "local"))
 	})
+	t.Run("API POST with bearer, query command", func(t *testing.T) {
+		r := newRedirEnv(t)
+		if out, err := r.login(); err != nil {
+			t.Fatalf("%v %s", err, out)
+		}
+		r.bounce["/api/v1/query"] = sinkURL(r) + "/x"
+		r.refused(r.run("", "query", "SELECT 1 FROM biomarkers", "--profile", "local"))
+	})
+	t.Run("API GET with bearer, query --result", func(t *testing.T) {
+		r := newRedirEnv(t)
+		if out, err := r.login(); err != nil {
+			t.Fatalf("%v %s", err, out)
+		}
+		r.bounce["/api/v1/results/r1"] = sinkURL(r) + "/x"
+		r.refused(r.run("", "query", "--result", "r1", "--profile", "local"))
+	})
 	t.Run("API GET with bearer, api command", func(t *testing.T) {
 		r := newRedirEnv(t)
 		if out, err := r.login(); err != nil {
@@ -171,6 +198,41 @@ func TestRedirectHTTPSToHTTPSStillWorks(t *testing.T) {
 	r.bounce["/api/v1/biomarkers"] = r.srv.URL + "/api/v1/whoami-final"
 	if out, err := r.run("", "biomarkers", "list", "--json", "--profile", "local"); err != nil {
 		t.Fatalf("%v %s", err, out)
+	}
+	if r.hits.Load() != 0 {
+		t.Fatal("sink reached")
+	}
+}
+
+// A 307 from the profile origin to another https origin keeps the POST and its body, but the bearer
+// stays behind: the other origin sees no Authorization header.
+func TestQueryCrossOriginRedirectCarriesNoBearer(t *testing.T) {
+	r := newRedirEnv(t)
+	var auth []string
+	var bodies []string
+	other := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		auth = append(auth, req.Header.Get("Authorization"))
+		b, _ := io.ReadAll(req.Body)
+		bodies = append(bodies, req.Method+" "+string(b))
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"columns":[{"name":"n","type":"bigint"}],"rows":[[1]],"result_id":"r1","next_cursor":null}`))
+	}))
+	t.Cleanup(other.Close)
+	r.otherAddr = strings.TrimPrefix(other.URL, "https://")
+	port := other.URL[strings.LastIndex(other.URL, ":"):]
+	if out, err := r.login(); err != nil {
+		t.Fatalf("%v %s", err, out)
+	}
+	r.bounce["/api/v1/query"] = "https://" + otherHost + port + "/api/v1/query"
+	out, err := r.run("", "query", "SELECT 1 FROM biomarkers", "--profile", "local")
+	if err != nil {
+		t.Fatalf("%v %s", err, out)
+	}
+	if len(auth) != 1 || auth[0] != "" {
+		t.Fatalf("the other origin saw Authorization %q", auth)
+	}
+	if !strings.HasPrefix(bodies[0], "POST ") || !strings.Contains(bodies[0], "SELECT 1") {
+		t.Fatalf("the redirected request was %q", bodies[0])
 	}
 	if r.hits.Load() != 0 {
 		t.Fatal("sink reached")

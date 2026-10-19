@@ -107,6 +107,30 @@ output partial and exits 9 when:
 
 A failure partway through (for example a 429) also stops the walk.
 
+### SQL with `query`
+
+`po query` runs one SQL `SELECT` over one published dataset through `POST /api/v1/query` and prints
+the first page as a table. SQL requires an authenticated token: sign in with `po login` first. Pass
+`-` to read the SQL from stdin.
+
+```sh
+# an aggregate
+po query "SELECT biomarker_kind, count(*) AS n FROM biomarkers GROUP BY biomarker_kind"
+# a filter
+po query "SELECT display_name, gene_symbol FROM biomarkers WHERE gene_symbol = 'EGFR'" --csv
+```
+
+The server stores the full result for 24 hours and enforces every limit: rows returned per page, rows
+stored, statement length and timeout. When the result was cut short, the server's notice prints on
+stderr. The footer names the stored result and the next page: `po query --result <result_id> --cursor
+<cursor>` fetches it through `GET /api/v1/results/{result_id}`, and `--all` follows the cursor to the
+end of the stored result. A walk that meets `RESULT_EXPIRED` or `GENERATION_CHANGED` prints what it
+fetched, quotes the server's message and exits 9.
+
+The CLI does not check the SQL. A refused query prints the server's `error_code`, `message`, `hint`
+and `docs` on one line and exits by the table below (most refusals exit 2). `--json` prints the
+server's body unchanged, including its `attribution` and `source_credit`.
+
 ### The `api` escape hatch
 
 `po api <path>` makes an authenticated GET and prints the body. A relative path is under `/api/v1/`; a
@@ -139,13 +163,13 @@ Scripts can branch on the exit code. `po exit-codes` prints this table (`--markd
 | exit | class | when |
 |---|---|---|
 | 0 | ok | success, including a warning that the SDK could not decode a response |
-| 1 | unexpected | an error word not in the table (the raw body is printed), a failure in the CLI itself |
-| 2 | usage | a bad flag or argument; an unknown command; 400 refusals (id_required, id_not_accepted, invalid_cursor, unknown_sort, unknown_dir, unknown_filter, unsupported_parameter) |
+| 1 | unexpected | an error word or error_code not in the table (the raw body or the server's message is printed), a failure in the CLI itself |
+| 2 | usage | a bad flag or argument; an unknown command; 400 refusals (id_required, id_not_accepted, invalid_cursor, unknown_sort, unknown_dir, unknown_filter, unsupported_parameter); a query the server refuses (SQL_TOO_LONG, PARSE_ERROR, MULTIPLE_STATEMENTS, every ..._NOT_ALLOWED code, SCHEMA_QUALIFIED_NAME, UNKNOWN_DATASET, UNKNOWN_COLUMN, OFFSET_TOO_LARGE, RESULT_TOO_LARGE, every INVALID_... code, UNKNOWN_FILTER_OPERATOR, SCOPE_NOT_AVAILABLE), printed with its hint and docs |
 | 3 | auth | not logged in; 401 missing_token, invalid_token, expired_token (after the one silent refresh), invalid_audience; a failed login |
-| 4 | forbidden | 403 access_pending, client_suspended, missing_role (the role is named), not_entitled (the credit is printed) |
-| 5 | not found | 404 unknown_page, unknown_section, not_found |
+| 4 | forbidden | 403 access_pending, client_suspended, missing_role (the role is named), not_entitled and NOT_ENTITLED (the credit is printed) |
+| 5 | not found | 404 unknown_page, unknown_section, not_found, UNKNOWN_RECORD; 410 RESULT_EXPIRED (a stored query result is gone) |
 | 6 | rate limited | 429 quota_exceeded: says which limit, when it resets and how long to wait; --wait sleeps up to 2 minutes and retries once; a depth refusal cannot be waited out |
-| 7 | unavailable | 503 no_identity_provider, any other 5xx, a network failure, 409 generation_changed |
+| 7 | unavailable | 503 no_identity_provider, any other 5xx, a network failure, 409 generation_changed or GENERATION_CHANGED, TIMEOUT, QUERY_FAILED |
 | 8 | not answered | a 200 whose body says unbuilt or not_applicable |
 | 9 | partial | --all printed some pages and then stopped |
 
