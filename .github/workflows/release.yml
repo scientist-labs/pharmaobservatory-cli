@@ -56,7 +56,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: stable
-      - uses: sigstore/cosign-installer@v4
+      - uses: sigstore/cosign-installer@v4.1.2
       # Pinned GitHub host keys (packaging/github_known_hosts): no trust on first use for the tap push
       # (GoReleaser's ssh_command reads this path) or the packages push below.
       - name: Pin the GitHub SSH host keys
