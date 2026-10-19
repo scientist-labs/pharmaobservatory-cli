@@ -102,6 +102,9 @@ func ExitCode(err error) int {
 // body is every field of a refusal body the table reads. Server text is sanitized where printed.
 type body struct {
 	Error       string         `json:"error"`
+	ErrorCode   string         `json:"error_code"`
+	Hint        string         `json:"hint"`
+	Docs        string         `json:"docs"`
 	Message     string         `json:"message"`
 	Role        string         `json:"role"`
 	License     string         `json:"license"`
@@ -187,9 +190,57 @@ var refusals = map[string]refusal{
 	"generation_changed":    {ExitUnavail, fixed("the warehouse was rebuilt since this cursor was issued (generation_changed); restart from the first page")},
 }
 
+// teaching maps the error_code of the SQL pipeline's teaching format ({error_code, message, hint,
+// docs}, answered by POST /api/v1/query, GET /api/v1/results/{result_id} and the dataset routes) to
+// an exit class. The server's codes are grouped as it groups them: the validation codes and the
+// dataset request codes are the caller's to fix (usage), NOT_ENTITLED is forbidden, UNKNOWN_RECORD and
+// RESULT_EXPIRED name something that is not there (or no longer is), and TIMEOUT, QUERY_FAILED and
+// GENERATION_CHANGED are the server's side (unavailable), as 409 generation_changed already is.
+var teaching = map[string]int{
+	// validation (400)
+	"SQL_TOO_LONG": ExitUsage, "PARSE_ERROR": ExitUsage, "MULTIPLE_STATEMENTS": ExitUsage,
+	"STATEMENT_NOT_ALLOWED": ExitUsage, "JOIN_NOT_ALLOWED": ExitUsage, "SUBQUERY_NOT_ALLOWED": ExitUsage,
+	"CTE_NOT_ALLOWED": ExitUsage, "SET_OPERATION_NOT_ALLOWED": ExitUsage, "NODE_NOT_ALLOWED": ExitUsage,
+	"SCHEMA_QUALIFIED_NAME": ExitUsage, "UNKNOWN_DATASET": ExitUsage, "UNKNOWN_COLUMN": ExitUsage,
+	"FUNCTION_NOT_ALLOWED": ExitUsage, "OPERATOR_NOT_ALLOWED": ExitUsage, "TYPECAST_NOT_ALLOWED": ExitUsage,
+	"OFFSET_TOO_LARGE": ExitUsage,
+	// pipeline
+	"NOT_ENTITLED":     ExitForbidden, // 403
+	"TIMEOUT":          ExitUnavail,   // 504
+	"QUERY_FAILED":     ExitUnavail,   // 500
+	"RESULT_EXPIRED":   ExitNotFound,  // 410
+	"RESULT_TOO_LARGE": ExitUsage,     // 413: narrow the query
+	// dataset request grammar
+	"UNKNOWN_FILTER_OPERATOR": ExitUsage, "INVALID_FILTER_VALUE": ExitUsage, "INVALID_SORT": ExitUsage,
+	"INVALID_GROUP_BY": ExitUsage, "INVALID_MEASURE": ExitUsage, "INVALID_LIMIT": ExitUsage,
+	"INVALID_CURSOR": ExitUsage, "SCOPE_NOT_AVAILABLE": ExitUsage,
+	"UNKNOWN_RECORD":     ExitNotFound, // 404
+	"GENERATION_CHANGED": ExitUnavail,  // 409
+}
+
+// teachingMsg is the server's error_code, message, hint and docs on one line, each sanitized. The
+// CLI adds nothing of its own except the credit a NOT_ENTITLED refusal carries (never its tier).
+func teachingMsg(b *body) string {
+	out := sanitize.Line(b.ErrorCode)
+	if m := sanitize.Line(b.Message); m != "" {
+		out += ": " + m
+	}
+	if h := sanitize.Line(b.Hint); h != "" {
+		out += "; hint: " + h
+	}
+	if d := sanitize.Line(b.Docs); d != "" {
+		out += "; docs: " + d
+	}
+	if b.ErrorCode == "NOT_ENTITLED" {
+		out += creditSuffix(b.License, b.Attribution)
+	}
+	return out
+}
+
 // FromResponse renders a non-200 API response as one plain line with the remedy. A known word maps
-// by the table; a 429 is class 6 whatever its word; any other 5xx is class 7; an unknown word is
-// class 1 with the raw body (never silently ok, never a crash). h may be nil.
+// by the table; a teaching-format body maps by its error_code; a 429 is class 6 whatever its word;
+// any other 5xx is class 7; an unknown word or code is class 1 with the raw body or the server's
+// text (never silently ok, never a crash). h may be nil.
 func FromResponse(status int, h http.Header, raw []byte, profile string) error {
 	var b body
 	_ = json.Unmarshal(raw, &b)
@@ -202,6 +253,17 @@ func FromResponse(status int, h http.Header, raw []byte, profile string) error {
 	}
 	if r, ok := refusals[b.Error]; ok {
 		return &ClassError{Class: r.class, Msg: r.msg(&b, profile)}
+	}
+	if b.ErrorCode != "" {
+		class, known := teaching[b.ErrorCode]
+		switch {
+		case known:
+		case status >= 500:
+			class = ExitUnavail
+		default:
+			class = ExitUnexpected
+		}
+		return &ClassError{Class: class, Msg: teachingMsg(&b)}
 	}
 	if status >= 500 {
 		return Unavailable("the server answered HTTP %d", status)

@@ -37,7 +37,7 @@ func NewRootWith(d Deps) *cobra.Command {
 	root.PersistentFlags().BoolVar(&g.wait, "wait", false, "when rate limited, sleep for the Retry-After (at most 2 minutes) and retry once; the default is to exit 6 and say how long to wait")
 	root.PersistentFlags().BoolVar(&g.quiet, "quiet", false, "drop the footer's as-of, link and paging lines; the source credit is always printed")
 	root.PersistentFlags().BoolVar(&g.noFooter, "no-footer", false, "same as --quiet; the source credit is always printed")
-	root.AddCommand(newVersionCmd(), newLoginCmd(g, d), newLogoutCmd(g, d), newWhoamiCmd(g, d), newAuthCmd(g, d), newAPICmd(g, d), newExitCodesCmd())
+	root.AddCommand(newVersionCmd(), newLoginCmd(g, d), newLogoutCmd(g, d), newWhoamiCmd(g, d), newAuthCmd(g, d), newAPICmd(g, d), newQueryCmd(g, d), newExitCodesCmd())
 	root.AddCommand(pages.Build(pageEnv(g, d))...)
 	return root
 }

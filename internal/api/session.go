@@ -2,6 +2,7 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -119,13 +120,20 @@ func (s *Session) Fresh(ctx context.Context) (store.Credential, error) {
 	return s.Refresh(ctx, c)
 }
 
-func (s *Session) do(ctx context.Context, path, token string) (int, http.Header, []byte, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, s.Profile.Base()+path, nil)
+func (s *Session) do(ctx context.Context, method, path, token string, payload []byte) (int, http.Header, []byte, error) {
+	var rd io.Reader
+	if payload != nil {
+		rd = bytes.NewReader(payload)
+	}
+	req, err := http.NewRequestWithContext(ctx, method, s.Profile.Base()+path, rd)
 	if err != nil {
 		return 0, nil, nil, err
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Accept", "application/json")
+	if payload != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
 	resp, err := s.HC.Do(req)
 	if err != nil {
 		if u := apierr.UsageCause(err); u != nil {
@@ -145,11 +153,25 @@ func (s *Session) do(ctx context.Context, path, token string) (int, http.Header,
 // invalid_audience is never retried. Under Wait a 429 with a usable Retry-After sleeps and retries
 // once. A non-200 answer is returned as the rendered error.
 func (s *Session) Get(ctx context.Context, path string) ([]byte, error) {
+	return s.send(ctx, http.MethodGet, path, nil)
+}
+
+// PostJSON performs POST path with the bearer and payload as the JSON body, with the same refresh,
+// --wait and error rules as Get. A replay after expired_token or a 429 resends the same bytes: the
+// server answered either refusal before running anything.
+func (s *Session) PostJSON(ctx context.Context, path string, payload []byte) ([]byte, error) {
+	if payload == nil {
+		payload = []byte{}
+	}
+	return s.send(ctx, http.MethodPost, path, payload)
+}
+
+func (s *Session) send(ctx context.Context, method, path string, payload []byte) ([]byte, error) {
 	c, err := s.Fresh(ctx)
 	if err != nil {
 		return nil, err
 	}
-	status, h, body, err := s.do(ctx, path, c.AccessToken)
+	status, h, body, err := s.do(ctx, method, path, c.AccessToken, payload)
 	if err != nil {
 		return nil, err
 	}
@@ -157,7 +179,7 @@ func (s *Session) Get(ctx context.Context, path string) ([]byte, error) {
 		if c, err = s.Refresh(ctx, c); err != nil {
 			return nil, err
 		}
-		if status, h, body, err = s.do(ctx, path, c.AccessToken); err != nil {
+		if status, h, body, err = s.do(ctx, method, path, c.AccessToken, payload); err != nil {
 			return nil, err
 		}
 	}
@@ -165,7 +187,7 @@ func (s *Session) Get(ctx context.Context, path string) ([]byte, error) {
 		if err := s.pause(ctx, d); err != nil {
 			return nil, err
 		}
-		if status, h, body, err = s.do(ctx, path, c.AccessToken); err != nil {
+		if status, h, body, err = s.do(ctx, method, path, c.AccessToken, payload); err != nil {
 			return nil, err
 		}
 	}
