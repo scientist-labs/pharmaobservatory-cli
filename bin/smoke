@@ -250,6 +250,28 @@ jq -e '.dataset == "sponsor_trials" and (.columns | length) > 0' "$TRIALS_JSON" 
 run 0 --wait companies get "$FOUND" sponsor_trials --limit 5
 assert_attribution "$TRIALS_JSON" "$LAST_ERR" "company dataset footer"
 
+# --- 6b. conditions and trials ------------------------------------------------------------------
+# The conditions list is sorted by trial count, so the first condition has trials; its newest trial
+# then reaches the trials group. A trial may register no drug, so trial-drugs asserts the dataset and
+# the credit, not a row count.
+run 0 --wait conditions list --limit 1 --json
+MESH="$(jq -r '.rows[0].condition_id' "$LAST_OUT")"
+[ -n "$MESH" ] && [ "$MESH" != null ] || fail "$LAST_CMD" "first condition row has no condition_id"
+run 0 --wait conditions get "$MESH" --json
+COND_JSON="$LAST_OUT"
+jq -e '.record != null and .object_type == "conditions"' "$COND_JSON" >/dev/null || fail "$LAST_CMD" "the condition has no record"
+run 0 --wait conditions get "$MESH"
+head -n1 "$LAST_OUT" | grep -q "^field$(printf '\t')value$" || fail "$LAST_CMD" "the record table header is not field, value"
+assert_attribution "$COND_JSON" "$LAST_ERR" "condition record footer"
+run 0 --wait conditions get "$MESH" condition-trials --limit 5 --json
+NCT="$(jq -r '.rows[0].trial_id' "$LAST_OUT")"
+[ -n "$NCT" ] && [ "$NCT" != null ] || fail "$LAST_CMD" "the condition with the most trials lists no trial"
+run 0 --wait trials get "$NCT" trial-drugs --json
+DRUGS_JSON="$LAST_OUT"
+jq -e '.dataset == "trial_drugs" and (.columns | length) > 0' "$DRUGS_JSON" >/dev/null || fail "$LAST_CMD" "not a trial_drugs dataset response"
+run 0 --wait trials get "$NCT" trial_drugs
+assert_attribution "$DRUGS_JSON" "$LAST_ERR" "trial dataset footer"
+
 # --- 7. --all on a small filtered list ----------------------------------------------------------
 run 0 --wait biomarkers list --filter gene_symbol=EGFR --limit 2 --all
 if ! grep -Eq 'fetched [0-9]+ rows; total [0-9]+' "$LAST_ERR"; then
