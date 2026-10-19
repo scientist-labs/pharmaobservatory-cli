@@ -30,9 +30,9 @@ func TestEveryRefusalWordMapsThroughTheCommands(t *testing.T) {
 		code   int
 		want   string
 	}{
-		{401, `{"error":"missing_token"}`, apierr.ExitAuth, "po login --profile local"},
-		{401, `{"error":"invalid_token"}`, apierr.ExitAuth, "po login --profile local"},
-		{401, `{"error":"invalid_audience"}`, apierr.ExitAuth, "po login --profile local"},
+		{401, `{"error":"missing_token"}`, apierr.ExitAuth, "pharma login --profile local"},
+		{401, `{"error":"invalid_token"}`, apierr.ExitAuth, "pharma login --profile local"},
+		{401, `{"error":"invalid_audience"}`, apierr.ExitAuth, "pharma login --profile local"},
 		{503, `{"error":"no_identity_provider"}`, apierr.ExitUnavail, "no_identity_provider"},
 		{403, `{"error":"client_suspended"}`, apierr.ExitForbidden, "suspended"},
 		{403, `{"error":"access_pending"}`, apierr.ExitForbidden, "access_pending"},
@@ -53,7 +53,7 @@ func TestEveryRefusalWordMapsThroughTheCommands(t *testing.T) {
 	for _, c := range cases {
 		e := loggedIn(t)
 		e.api = refuse(c.status, "", c.body)
-		out, err := e.po("cell-lines", "list", "--json")
+		out, err := e.pharma("cell-lines", "list", "--json")
 		if err == nil || apierr.ExitCode(err) != c.code || !strings.Contains(err.Error(), c.want) {
 			t.Errorf("%d %s: exit %d err %v", c.status, c.body, apierr.ExitCode(err), err)
 		}
@@ -69,7 +69,7 @@ func TestEveryRefusalWordMapsThroughTheCommands(t *testing.T) {
 func TestRefusalMessageSanitizesServerText(t *testing.T) {
 	e := loggedIn(t)
 	e.api = refuse(404, "", "{\"error\":\"unknown_page\",\"message\":\"bad\\u001b[2Jpage\",\"valid_pages\":[\"a\\u0007b\"]}")
-	_, err := e.po("cell-lines", "list")
+	_, err := e.pharma("cell-lines", "list")
 	if strings.ContainsAny(err.Error(), "\x1b\x07") || !strings.Contains(err.Error(), "ab") {
 		t.Fatalf("%q", err)
 	}
@@ -78,7 +78,7 @@ func TestRefusalMessageSanitizesServerText(t *testing.T) {
 func TestQuotaWithRetryAfterDoesNotWaitByDefault(t *testing.T) {
 	e := loggedIn(t)
 	e.api = refuse(429, "42", quotaBody)
-	_, err := e.po("cell-lines", "list")
+	_, err := e.pharma("cell-lines", "list")
 	if apierr.ExitCode(err) != apierr.ExitRateLimited {
 		t.Fatalf("exit %d: %v", apierr.ExitCode(err), err)
 	}
@@ -98,7 +98,7 @@ func TestQuotaWithoutRetryAfterIsADepthRefusal(t *testing.T) {
 		e := loggedIn(t)
 		e.api = refuse(429, "", body)
 		e.whoami = refuse(429, "", body)
-		_, err := e.po(cmd...)
+		_, err := e.pharma(cmd...)
 		if apierr.ExitCode(err) != apierr.ExitRateLimited {
 			t.Fatalf("%v exit %d", cmd, apierr.ExitCode(err))
 		}
@@ -126,7 +126,7 @@ func TestWaitHonoursRetryAfterAndRetriesOnce(t *testing.T) {
 			_, _ = w.Write([]byte(`{"ok":true,"sub":"u","roles":[]}`))
 		}
 		e.api, e.whoami = ok, ok
-		_, err := e.po(cmd...)
+		_, err := e.pharma(cmd...)
 		if err != nil || calls != 2 || len(e.sleeps) != 1 || e.sleeps[0] != 7*time.Second {
 			t.Fatalf("%v: err %v calls %d sleeps %v", cmd, err, calls, e.sleeps)
 		}
@@ -141,7 +141,7 @@ func TestWaitRetriesOnlyOnceAndThenReports(t *testing.T) {
 		e := loggedIn(t)
 		e.api = refuse(429, "3", quotaBody)
 		e.whoami = refuse(429, "3", quotaBody)
-		_, err := e.po(cmd...)
+		_, err := e.pharma(cmd...)
 		if apierr.ExitCode(err) != apierr.ExitRateLimited || len(e.sleeps) != 1 || len(e.seen)+e.whoamis != 2 {
 			t.Fatalf("%v: exit %d sleeps %v requests %d", cmd, apierr.ExitCode(err), e.sleeps, len(e.seen)+e.whoamis)
 		}
@@ -153,7 +153,7 @@ func TestWaitCapsAtMaxWait(t *testing.T) {
 		e := loggedIn(t)
 		e.api = refuse(429, "3600", quotaBody)
 		e.whoami = refuse(429, "3600", quotaBody)
-		_, err := e.po(cmd...)
+		_, err := e.pharma(cmd...)
 		if apierr.ExitCode(err) != apierr.ExitRateLimited || len(e.sleeps) != 0 {
 			t.Fatalf("%v: exit %d sleeps %v: a Retry-After past the cap must not be slept", cmd, apierr.ExitCode(err), e.sleeps)
 		}
@@ -164,7 +164,7 @@ func TestWaitCapsAtMaxWait(t *testing.T) {
 	// The boundary: exactly MaxWait is slept.
 	e := loggedIn(t)
 	e.api = refuse(429, "120", quotaBody)
-	_, _ = e.po("cell-lines", "list", "--wait")
+	_, _ = e.pharma("cell-lines", "list", "--wait")
 	if len(e.sleeps) != 1 || e.sleeps[0] != apierr.MaxWait {
 		t.Fatalf("sleeps %v", e.sleeps)
 	}
@@ -173,7 +173,7 @@ func TestWaitCapsAtMaxWait(t *testing.T) {
 func TestQuotaBodyWithoutBudgetStillRateLimited(t *testing.T) {
 	e := loggedIn(t)
 	e.api = refuse(429, "5", `slow down`)
-	_, err := e.po("cell-lines", "list")
+	_, err := e.pharma("cell-lines", "list")
 	if apierr.ExitCode(err) != apierr.ExitRateLimited || !strings.Contains(err.Error(), "try again in 5s") {
 		t.Fatalf("%v", err)
 	}
@@ -190,7 +190,7 @@ func TestAllWalkMarksAPartialResultOnQuota(t *testing.T) {
 		}
 		refuse(429, "9", quotaBody)(w, r)
 	}
-	_, err := e.po("cell-lines", "list", "--all")
+	_, err := e.pharma("cell-lines", "list", "--all")
 	if apierr.ExitCode(err) != apierr.ExitPartial || !strings.Contains(err.Error(), "rate limited") {
 		t.Fatalf("exit %d: %v", apierr.ExitCode(err), err)
 	}
@@ -199,7 +199,7 @@ func TestAllWalkMarksAPartialResultOnQuota(t *testing.T) {
 func TestStrayArgumentIsUsageEverywhere(t *testing.T) {
 	e := loggedIn(t)
 	for _, args := range [][]string{{"version", "x"}, {"whoami", "x"}, {"logout", "x"}, {"login", "x"}, {"auth", "refresh", "x"}, {"exit-codes", "x"}} {
-		_, err := e.po(args...)
+		_, err := e.pharma(args...)
 		if apierr.ExitCode(err) != apierr.ExitUsage || !strings.Contains(err.Error(), "unexpected argument") {
 			t.Errorf("%v: exit %d %v", args, apierr.ExitCode(err), err)
 		}
@@ -228,7 +228,7 @@ func TestExitCodesPrintsTheSingleSourceTable(t *testing.T) {
 func TestUnreachableServerIsUnavailableWithoutAStackTrace(t *testing.T) {
 	e := loggedIn(t)
 	e.srv.Close()
-	_, err := e.po("whoami")
+	_, err := e.pharma("whoami")
 	if apierr.ExitCode(err) != apierr.ExitUnavail || strings.Contains(err.Error(), "goroutine") {
 		t.Fatalf("%v", err)
 	}

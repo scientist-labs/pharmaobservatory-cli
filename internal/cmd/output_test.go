@@ -45,10 +45,10 @@ func serve(body string) func(http.ResponseWriter, *http.Request) {
 	}
 }
 
-// po runs a command and returns stdout, stderr and the error.
+// pharma runs a command and returns stdout, stderr and the error.
 func (e *env) split(args ...string) (string, string, error) {
 	e.errBuf = &bytes.Buffer{}
-	out, err := e.po(args...)
+	out, err := e.pharma(args...)
 	// The fixtures are partial envelopes, so the SDK's typed decode warns; that path has its own
 	// test in pages_test.go and is not what these assertions are about.
 	var kept []string
@@ -189,7 +189,7 @@ func TestAllFollowsTheCursorWithOneHeaderAndCountsRows(t *testing.T) {
 		t.Fatalf("footer %q", errOut)
 	}
 	// the flag set is restored: a later plain call sends no cursor
-	if _, err := e.po("biomarkers", "list", "--json"); err != nil {
+	if _, err := e.pharma("biomarkers", "list", "--json"); err != nil {
 		t.Fatal(err)
 	}
 }

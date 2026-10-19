@@ -29,7 +29,7 @@ func loggedIn(t *testing.T) *env {
 	return e
 }
 
-func (e *env) po(args ...string) (string, error) {
+func (e *env) pharma(args ...string) (string, error) {
 	return e.run(append(args, "--profile", "local")...)
 }
 
@@ -43,7 +43,7 @@ func (e *env) lastSeen(t *testing.T) string {
 
 func TestListFlagsReachTheQueryAndBodyIsRaw(t *testing.T) {
 	e := loggedIn(t)
-	out, err := e.po("biomarkers", "list", "--sort", "-evidence_tier", "--limit", "5", "--group-by", "biomarker_kind", "--measure", "count", "--filter", "gene_symbol=EGFR", "--json")
+	out, err := e.pharma("biomarkers", "list", "--sort", "-evidence_tier", "--limit", "5", "--group-by", "biomarker_kind", "--measure", "count", "--filter", "gene_symbol=EGFR", "--json")
 	if err != nil {
 		t.Fatalf("%v\n%s", err, out)
 	}
@@ -60,14 +60,14 @@ func TestListFlagsReachTheQueryAndBodyIsRaw(t *testing.T) {
 
 func TestUnsetFlagsAreNotSent(t *testing.T) {
 	e := loggedIn(t)
-	if _, err := e.po("cell-lines", "list", "--json"); err != nil {
+	if _, err := e.pharma("cell-lines", "list", "--json"); err != nil {
 		t.Fatal(err)
 	}
 	if got := e.lastSeen(t); got != "/api/v1/cell_lines" {
 		t.Fatalf("request: %s", got)
 	}
 	// a zero value that was explicitly set is sent
-	if _, err := e.po("cell-lines", "list", "--limit", "0", "--sort=", "--json"); err != nil {
+	if _, err := e.pharma("cell-lines", "list", "--limit", "0", "--sort=", "--json"); err != nil {
 		t.Fatal(err)
 	}
 	if got := e.lastSeen(t); got != "/api/v1/cell_lines?limit=0&sort=" {
@@ -82,7 +82,7 @@ func TestGetPassesIDVerbatimAndEncodesOnce(t *testing.T) {
 		"edgar:0001:x-1": "/api/v1/biomarkers/edgar:0001:x-1",
 		"a b/c":          "/api/v1/biomarkers/a%20b%2Fc",
 	} {
-		out, err := e.po("biomarkers", "get", id, "--json")
+		out, err := e.pharma("biomarkers", "get", id, "--json")
 		if err != nil || out != rawBody {
 			t.Fatalf("%q: %v %q", id, err, out)
 		}
@@ -98,7 +98,7 @@ func TestGetDatasetWithItsOwnFlag(t *testing.T) {
 		{"biomarkers", "get", "ESR1", "biomarker-evidence", "--limit", "5", "--json"},
 		{"--json", "biomarkers", "get", "ESR1", "biomarker_evidence", "--limit=5"},
 	} {
-		out, err := e.po(args...)
+		out, err := e.pharma(args...)
 		if err != nil || out != rawBody {
 			t.Fatalf("%v: %v %q", args, err, out)
 		}
@@ -112,7 +112,7 @@ func TestGetDatasetWithItsOwnFlag(t *testing.T) {
 		"datasets get site_trials":                              "/api/v1/datasets/site_trials",
 		"datasets list":                                         "/api/v1/datasets",
 	} {
-		if _, err := e.po(append(strings.Fields(args), "--json")...); err != nil {
+		if _, err := e.pharma(append(strings.Fields(args), "--json")...); err != nil {
 			t.Fatalf("%s: %v", args, err)
 		}
 		if got := e.lastSeen(t); got != want {
@@ -124,7 +124,7 @@ func TestGetDatasetWithItsOwnFlag(t *testing.T) {
 func TestUnknownDatasetFailsLocallyWithValidKeys(t *testing.T) {
 	e := loggedIn(t)
 	n := len(e.seen)
-	_, err := e.po("biomarkers", "get", "EGFR", "nonsense")
+	_, err := e.pharma("biomarkers", "get", "EGFR", "nonsense")
 	if err == nil || apierr.ExitCode(err) != apierr.ExitUsage {
 		t.Fatalf("%v", err)
 	}
@@ -148,7 +148,7 @@ func TestGetUsageErrors(t *testing.T) {
 		{"biomarkers", "list", "--limit", "abc"},
 	} {
 		n := len(e.seen)
-		_, err := e.po(args...)
+		_, err := e.pharma(args...)
 		if apierr.ExitCode(err) != apierr.ExitUsage {
 			t.Errorf("%v: exit %d (%v)", args, apierr.ExitCode(err), err)
 		}
@@ -160,26 +160,26 @@ func TestGetUsageErrors(t *testing.T) {
 
 func TestHelpTextComesFromTheSpec(t *testing.T) {
 	e := loggedIn(t)
-	out, err := e.po("biomarkers", "--help")
+	out, err := e.pharma("biomarkers", "--help")
 	if err != nil || !strings.Contains(out, "biomarker-evidence") || !strings.Contains(out, "FDA biomarker qualification projects") {
 		t.Fatalf("%v\n%s", err, out)
 	}
-	out, err = e.po("biomarkers", "list", "--help")
+	out, err = e.pharma("biomarkers", "list", "--help")
 	if err != nil || !strings.Contains(out, "--group-by") || !strings.Contains(out, "--limit int32") || !strings.Contains(out, "--filter") {
 		t.Fatalf("%v\n%s", err, out)
 	}
-	out, err = e.po("biomarkers", "get", "--help")
+	out, err = e.pharma("biomarkers", "get", "--help")
 	if err != nil || !strings.Contains(out, "get <id> [dataset]") {
 		t.Fatalf("%v\n%s", err, out)
 	}
-	out, err = e.po("biomarkers", "get", "EGFR", "biomarker-evidence", "--help")
+	out, err = e.pharma("biomarkers", "get", "EGFR", "biomarker-evidence", "--help")
 	if err != nil || !strings.Contains(out, "--cursor") || !strings.Contains(out, "GET /api/v1/biomarkers/{id}/biomarker_evidence") || !strings.Contains(out, "get <id> biomarker-evidence") {
 		t.Fatalf("%v\n%s", err, out)
 	}
-	if out, err = e.po("biomarkers"); err != nil || !strings.Contains(out, "Available Commands") {
+	if out, err = e.pharma("biomarkers"); err != nil || !strings.Contains(out, "Available Commands") {
 		t.Fatalf("%v\n%s", err, out)
 	}
-	if out, err = e.po("datasets", "get", "--help"); err != nil || !strings.Contains(out, "get <name>") {
+	if out, err = e.pharma("datasets", "get", "--help"); err != nil || !strings.Contains(out, "get <name>") {
 		t.Fatalf("%v\n%s", err, out)
 	}
 	if len(e.seen) != 0 {
@@ -189,7 +189,7 @@ func TestHelpTextComesFromTheSpec(t *testing.T) {
 
 func TestNotLoggedInExitsThree(t *testing.T) {
 	e := loggedIn(t)
-	if _, err := e.po("logout"); err != nil {
+	if _, err := e.pharma("logout"); err != nil {
 		t.Fatal(err)
 	}
 	e.seen = nil
@@ -199,8 +199,8 @@ func TestNotLoggedInExitsThree(t *testing.T) {
 		{"sites", "get", "site:1", "site_trials"},
 		{"api", "biomarkers"},
 	} {
-		out, err := e.po(args...)
-		if apierr.ExitCode(err) != apierr.ExitAuth || !strings.Contains(err.Error(), "not logged in to local; run: po login --profile local") {
+		out, err := e.pharma(args...)
+		if apierr.ExitCode(err) != apierr.ExitAuth || !strings.Contains(err.Error(), "not logged in to local; run: pharma login --profile local") {
 			t.Errorf("%v: %v", args, err)
 		}
 		if out != "" {
@@ -218,18 +218,18 @@ func TestServerErrorsMapAndJSONKeepsTheBody(t *testing.T) {
 		w.WriteHeader(403)
 		_, _ = w.Write([]byte(`{"error":"missing_role","role":"example:read"}`))
 	}
-	out, err := e.po("cell-lines", "list", "--json")
+	out, err := e.pharma("cell-lines", "list", "--json")
 	if apierr.ExitCode(err) != apierr.ExitForbidden || !strings.Contains(err.Error(), "example:read") {
 		t.Fatalf("%v", err)
 	}
 	if !strings.Contains(out, `"missing_role"`) {
 		t.Fatalf("--json must print the server body: %q", out)
 	}
-	if out, _ = e.po("cell-lines", "list"); strings.Contains(out, `{"error"`) {
+	if out, _ = e.pharma("cell-lines", "list"); strings.Contains(out, `{"error"`) {
 		t.Fatalf("the body of an error is not printed without --json: %q", out)
 	}
 	e.api = func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(502) }
-	if _, err = e.po("cell-lines", "list"); apierr.ExitCode(err) != apierr.ExitUnavail {
+	if _, err = e.pharma("cell-lines", "list"); apierr.ExitCode(err) != apierr.ExitUnavail {
 		t.Fatalf("%v", err)
 	}
 }
@@ -247,7 +247,7 @@ func TestExpiredTokenRefreshesOnceThroughTheTypedPath(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(rawBody))
 	}
-	out, err := e.po("cell-lines", "list", "--json")
+	out, err := e.pharma("cell-lines", "list", "--json")
 	if err != nil || out != rawBody {
 		t.Fatalf("%v %q", err, out)
 	}
@@ -262,7 +262,7 @@ func TestInvalidAudienceIsNeverRetried(t *testing.T) {
 		w.WriteHeader(401)
 		_, _ = w.Write([]byte(`{"error":"invalid_audience"}`))
 	}
-	_, err := e.po("cell-lines", "list")
+	_, err := e.pharma("cell-lines", "list")
 	if apierr.ExitCode(err) != apierr.ExitAuth || !strings.Contains(err.Error(), "invalid_audience") {
 		t.Fatalf("%v", err)
 	}
@@ -278,7 +278,7 @@ func TestTypedDecodeFailureWarnsAndStillPrintsTheRawBody(t *testing.T) {
 		_, _ = w.Write([]byte(`[1,2]`))
 	}
 	e.errBuf.Reset()
-	out, err := e.po("cell-lines", "list", "--json")
+	out, err := e.pharma("cell-lines", "list", "--json")
 	if err != nil {
 		t.Fatalf("a decode failure with a rendered body must exit 0: %v", err)
 	}
@@ -293,7 +293,7 @@ func TestTypedDecodeFailureWarnsAndStillPrintsTheRawBody(t *testing.T) {
 func TestUnreachableServerIsClassSeven(t *testing.T) {
 	e := loggedIn(t)
 	e.srv.Close()
-	_, err := e.po("cell-lines", "list")
+	_, err := e.pharma("cell-lines", "list")
 	if apierr.ExitCode(err) != apierr.ExitUnavail || !strings.Contains(err.Error(), "cannot reach") {
 		t.Fatalf("%v", err)
 	}
@@ -311,7 +311,7 @@ func TestAPICommand(t *testing.T) {
 		{[]string{"api", "biomarkers", "-F", "kind=gene", "-F", "q=a b&c", "--field", "limit=5"}, "/api/v1/biomarkers?kind=gene&limit=5&q=a+b%26c"},
 		{[]string{"api", "biomarkers?dir=asc", "-F", "limit=2"}, "/api/v1/biomarkers?dir=asc&limit=2"},
 	} {
-		out, err := e.po(c.args...)
+		out, err := e.pharma(c.args...)
 		if err != nil || out != rawBody {
 			t.Fatalf("%v: %v %q", c.args, err, out)
 		}
@@ -333,7 +333,7 @@ func TestAPICommandRefusesBadInput(t *testing.T) {
 		{"api", "biomarkers", "-F", "novalue"},
 		{"api", "biomarkers", "-F", "=v"},
 	} {
-		_, err := e.po(args...)
+		_, err := e.pharma(args...)
 		if apierr.ExitCode(err) != apierr.ExitUsage {
 			t.Errorf("%v: exit %d (%v)", args, apierr.ExitCode(err), err)
 		}
@@ -349,7 +349,7 @@ func TestAPICommandErrorKeepsBodyAndExit(t *testing.T) {
 		w.WriteHeader(403)
 		_, _ = w.Write([]byte(`{"error":"access_pending"}`))
 	}
-	out, err := e.po("api", "biomarkers")
+	out, err := e.pharma("api", "biomarkers")
 	if apierr.ExitCode(err) != apierr.ExitForbidden || !strings.Contains(out, "access_pending") {
 		t.Fatalf("%v %q", err, out)
 	}

@@ -24,9 +24,9 @@ const sdkModule = "github.com/scientist-labs/pharmaobservatory-sdks/go"
 // non-page operation in a bumped SDK fails TestNonPageOperationsAreHandMapped until it is mapped
 // there and added here.
 var handMapped = []string{
-	"GET /api/v1/whoami",              // po whoami
-	"POST /api/v1/query",              // po query
-	"GET /api/v1/results/{result_id}", // po query --result
+	"GET /api/v1/whoami",              // pharma whoami
+	"POST /api/v1/query",              // pharma query
+	"GET /api/v1/results/{result_id}", // pharma query --result
 }
 
 func realModel(t *testing.T) *tree.Model {
@@ -83,7 +83,7 @@ func TestNonPageOperationsAreHandMapped(t *testing.T) {
 }
 
 func TestEveryOperationIsReachableInTheCobraTree(t *testing.T) {
-	root := &cobra.Command{Use: "po"}
+	root := &cobra.Command{Use: "pharma"}
 	root.AddCommand(Build(&Env{})...)
 	for _, o := range Operations {
 		page := tree.Kebab(o.Page)
@@ -184,7 +184,7 @@ func TestCollidingNamesAreRegisteredOnlyUnderTheEscapeCommands(t *testing.T) {
 		{Slug: "login", Escaped: true, List: mk("", false)},
 		{Slug: "widgets", Sections: []*Op{mk("help", true), mk("counts", false)}},
 	}
-	root := &cobra.Command{Use: "po"}
+	root := &cobra.Command{Use: "pharma"}
 	root.AddCommand(buildFrom(&Env{}, specs)...)
 	names := func(c *cobra.Command) string {
 		var n []string
@@ -229,7 +229,7 @@ func TestDecodeWarningIsOneSanitizedLine(t *testing.T) {
 }
 
 func TestKebabCommandsAcceptTheAPINames(t *testing.T) {
-	root := &cobra.Command{Use: "po"}
+	root := &cobra.Command{Use: "pharma"}
 	root.AddCommand(Build(&Env{})...)
 	for _, path := range [][]string{{"cell-lines", "list"}, {"cell_lines", "list"}, {"legal-entities", "get"}, {"datasets", "get"}, {"datasets", "list"}, {"sites", "get"}} {
 		if c, rest, err := root.Find(path); err != nil || len(rest) != 0 || c.Name() != path[1] {

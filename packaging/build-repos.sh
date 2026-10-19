@@ -4,7 +4,7 @@
 #
 #   packaging/build-repos.sh <dist-dir> <site-dir>
 #
-# <dist-dir>  holds the release's pharmaobservatory_*.deb and pharmaobservatory_*.rpm (GoReleaser dist/).
+# <dist-dir>  holds the release's pharma_*.deb and pharma_*.rpm (GoReleaser dist/).
 # <site-dir>  is the working tree of the packages repo (or any directory for a dry run). Existing
 #             content is kept, the new packages are added, metadata is regenerated, and only the
 #             newest KEEP_VERSIONS versions per package kind and architecture are retained.
@@ -27,8 +27,8 @@ keep=${KEEP_VERSIONS:-5}
 : "${GPG_PASSPHRASE:?GPG_PASSPHRASE is not set}"
 
 shopt -s nullglob
-debs=("$dist"/pharmaobservatory_*.deb)
-rpms=("$dist"/pharmaobservatory_*.rpm)
+debs=("$dist"/pharma_*.deb)
+rpms=("$dist"/pharma_*.rpm)
 [ ${#debs[@]} -gt 0 ] && [ ${#rpms[@]} -gt 0 ] || { echo "no deb or rpm files in $dist" >&2; exit 1; }
 
 GNUPGHOME=$(mktemp -d)

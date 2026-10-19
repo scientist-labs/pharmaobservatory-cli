@@ -3,7 +3,7 @@
 A command-line client for the [Pharma Observatory](https://pharmaobservatory.com) REST API. It talks
 to the API only, and needs a plan with API access.
 
-The command is `po` in every example below. The name may change before v0.1.0.
+The command is `pharma` in every example below.
 
 ## Install
 
@@ -13,7 +13,7 @@ The command is `po` in every example below. The name may change before v0.1.0.
 Homebrew (macOS and Linux):
 
 ```sh
-brew install scientist-labs/pharmaobservatory/pharmaobservatory
+brew install scientist-labs/pharmaobservatory/pharma
 ```
 
 Debian and Ubuntu (apt), served at `packages.pharmaobservatory.com`:
@@ -24,14 +24,14 @@ curl -fsSL https://packages.pharmaobservatory.com/pharmaobservatory.gpg \
   | sudo tee /usr/share/keyrings/pharmaobservatory-archive-keyring.gpg >/dev/null
 echo "deb [signed-by=/usr/share/keyrings/pharmaobservatory-archive-keyring.gpg] https://packages.pharmaobservatory.com/apt stable main" \
   | sudo tee /etc/apt/sources.list.d/pharmaobservatory.list
-sudo apt-get update && sudo apt-get install pharmaobservatory
+sudo apt-get update && sudo apt-get install pharma
 ```
 
 Fedora, RHEL and derivatives (dnf or yum):
 
 ```sh
 sudo curl -fsSL -o /etc/yum.repos.d/pharmaobservatory.repo https://packages.pharmaobservatory.com/rpm/pharmaobservatory.repo
-sudo dnf install pharmaobservatory
+sudo dnf install pharma
 ```
 
 The repository metadata is signed; the individual packages are not.
@@ -50,20 +50,20 @@ sha256sum --check --ignore-missing checksums.txt
 ## Sign in
 
 ```sh
-po login                  # opens your browser; loopback redirect on 127.0.0.1:53682
-po login --no-browser     # prints the URL; sign in anywhere, then paste the callback URL (or just its code)
-po whoami                 # profile, origin, who, organization, plan, roles and remaining quota; --json prints the raw body
-po logout                 # removes the stored credential for the profile
+pharma login                  # opens your browser; loopback redirect on 127.0.0.1:53682
+pharma login --no-browser     # prints the URL; sign in anywhere, then paste the callback URL (or just its code)
+pharma whoami                 # profile, origin, who, organization, plan, roles and remaining quota; --json prints the raw body
+pharma logout                 # removes the stored credential for the profile
 ```
 
-Profiles: `prod` (default) and `staging` are built in. Pick one with `--profile`, `$PO_PROFILE` or
+Profiles: `prod` (default) and `staging` are built in. Pick one with `--profile`, `$PHARMA_PROFILE` or
 `default_profile` in `config.yml`. Create a custom profile with
-`po login --profile NAME --origin URL [--client-id ID]`.
+`pharma login --profile NAME --origin URL [--client-id ID]`.
 
 The refresh token lives in the OS keychain (macOS Keychain, Linux Secret Service, Windows Credential
-Manager). Where none is available, or with `PO_CREDENTIAL_STORE=file`, it lives in `credentials.json`
-(mode 0600) in the config directory (`$PO_CONFIG_DIR`, else `$XDG_CONFIG_HOME/po`, else `~/.config/po`).
-`po logout` deletes it locally and does not revoke it server-side.
+Manager). Where none is available, or with `PHARMA_CREDENTIAL_STORE=file`, it lives in `credentials.json`
+(mode 0600) in the config directory (`$PHARMA_CONFIG_DIR`, else `$XDG_CONFIG_HOME/pharma`, else `~/.config/pharma`).
+`pharma logout` deletes it locally and does not revoke it server-side.
 
 ## Commands
 
@@ -72,19 +72,19 @@ One command group per object type (`biomarkers`, `cell-lines`, `companies`, `con
 plus `datasets` for the catalog, generated from the API document. The shapes:
 
 ```sh
-po companies list                                  # the object type's primary dataset
-po companies get <id>                              # one record and the datasets reachable from it
-po companies get <id> sponsor-trials               # one dataset of a record
-po datasets list                                   # every published dataset
-po datasets get <name>                             # one dataset's grain and columns
+pharma companies list                                  # the object type's primary dataset
+pharma companies get <id>                              # one record and the datasets reachable from it
+pharma companies get <id> sponsor-trials               # one dataset of a record
+pharma datasets list                                   # every published dataset
+pharma datasets get <name>                             # one dataset's grain and columns
 ```
 
-Real examples: `po companies get <id> sponsor-trials --scope group`, `po sites get <id> site-trials`,
-`po biomarkers get ESR1 biomarker-evidence`, `po trials get NCT01234567 trial-drugs`, `po conditions get
+Real examples: `pharma companies get <id> sponsor-trials --scope group`, `pharma sites get <id> site-trials`,
+`pharma biomarkers get ESR1 biomarker-evidence`, `pharma trials get NCT01234567 trial-drugs`, `pharma conditions get
 D001943 condition-trials`. Command and dataset names are the API's names with `-` for
-`_`, and the API's own spelling works too (`po cell_lines list`, `po sites get <id> site_trials`). Ids
-are passed through verbatim. Put the id and dataset before any flags. `po <object> --help` lists the
-datasets; `po <object> get <id> <dataset> --help` lists a dataset's flags. A parameter named like a
+`_`, and the API's own spelling works too (`pharma cell_lines list`, `pharma sites get <id> site_trials`). Ids
+are passed through verbatim. Put the id and dataset before any flags. `pharma <object> --help` lists the
+datasets; `pharma <object> get <id> <dataset> --help` lists a dataset's flags. A parameter named like a
 global flag (for example `--json`) is exposed as `--param-json`.
 
 Every dataset read takes the paging and shaping flags the API document declares (`--limit`, `--cursor`,
@@ -92,8 +92,8 @@ Every dataset read takes the paging and shaping flags the API document declares 
 which uses the server's filter grammar keyed by column:
 
 ```sh
-po biomarkers list --filter gene_symbol=EGFR --filter evidence_tier.lte=2 --sort -n_trial_mention
-po biomarkers list --group-by biomarker_kind --measure count
+pharma biomarkers list --filter gene_symbol=EGFR --filter evidence_tier.lte=2 --sort -n_trial_mention
+pharma biomarkers list --group-by biomarker_kind --measure count
 ```
 
 `--filter column=value` is equality (a repeated column is an IN list); `column.gt`, `.gte`, `.lt`,
@@ -104,8 +104,8 @@ po biomarkers list --group-by biomarker_kind --measure count
 The default is a table, with a footer on stderr (source credit, as-of date, paging). Other forms:
 
 ```sh
-po biomarkers list --limit 5 --json   # the server's body, unchanged
-po biomarkers list --limit 5 --csv    # CSV built from the response columns
+pharma biomarkers list --limit 5 --json   # the server's body, unchanged
+pharma biomarkers list --limit 5 --csv    # CSV built from the response columns
 ```
 
 A record prints its fields (attribute datasets folded in as `dataset.field`), then the datasets
@@ -133,20 +133,20 @@ A failure partway through (for example a 429) also stops the walk. `--filter` ap
 
 ### SQL with `query`
 
-`po query` runs one SQL `SELECT` over one published dataset through `POST /api/v1/query` and prints
-the first page as a table. SQL requires an authenticated token: sign in with `po login` first. Pass
+`pharma query` runs one SQL `SELECT` over one published dataset through `POST /api/v1/query` and prints
+the first page as a table. SQL requires an authenticated token: sign in with `pharma login` first. Pass
 `-` to read the SQL from stdin.
 
 ```sh
 # an aggregate
-po query "SELECT biomarker_kind, count(*) AS n FROM biomarkers GROUP BY biomarker_kind"
+pharma query "SELECT biomarker_kind, count(*) AS n FROM biomarkers GROUP BY biomarker_kind"
 # a filter
-po query "SELECT display_name, gene_symbol FROM biomarkers WHERE gene_symbol = 'EGFR'" --csv
+pharma query "SELECT display_name, gene_symbol FROM biomarkers WHERE gene_symbol = 'EGFR'" --csv
 ```
 
 The server stores the full result for 24 hours and enforces every limit: rows returned per page, rows
 stored, statement length and timeout. When the result was cut short, the server's notice prints on
-stderr. The footer names the stored result and the next page: `po query --result <result_id> --cursor
+stderr. The footer names the stored result and the next page: `pharma query --result <result_id> --cursor
 <cursor>` fetches it through `GET /api/v1/results/{result_id}`, and `--all` follows the cursor to the
 end of the stored result. A walk that meets `RESULT_EXPIRED` or `GENERATION_CHANGED` prints what it
 fetched, quotes the server's message and exits 9.
@@ -157,12 +157,12 @@ server's body unchanged, including its `attribution` and `source_credit`.
 
 ### The `api` escape hatch
 
-`po api <path>` makes an authenticated GET and prints the body. A relative path is under `/api/v1/`; a
+`pharma api <path>` makes an authenticated GET and prints the body. A relative path is under `/api/v1/`; a
 path starting with `/` is used as given. `-F key=value` adds a query parameter.
 
 ```sh
-po api biomarkers -F kind=gene -F limit=5
-po api /api/v1/whoami
+pharma api biomarkers -F kind=gene -F limit=5
+pharma api /api/v1/whoami
 ```
 
 ## Source credit
@@ -182,7 +182,7 @@ A 429 exits 6 and says which limit was hit, when it resets and how long to wait.
 default. `--wait` sleeps for the Retry-After (at most 2 minutes) and retries once. A paging-depth
 refusal has no Retry-After and cannot be waited out: narrow the query.
 
-Scripts can branch on the exit code. `po exit-codes` prints this table (`--markdown` for this form).
+Scripts can branch on the exit code. `pharma exit-codes` prints this table (`--markdown` for this form).
 
 | exit | class | when |
 |---|---|---|
@@ -212,8 +212,8 @@ is regenerated daily.
 Requires Go 1.24 or newer.
 
 ```sh
-go build -o po ./cmd/po
-./po version
+go build -o pharma ./cmd/pharma
+./pharma version
 ```
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for tests, lint and the release dry run.

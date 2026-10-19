@@ -24,11 +24,11 @@ var globalFlags = map[string]bool{
 }
 
 // PageReserved are the names under a page group that a collection section cannot take. Such a
-// section is registered only as `po <page> section <key>`.
+// section is registered only as `pharma <page> section <key>`.
 var PageReserved = map[string]bool{"list": true, "get": true, "help": true, "completion": true, "section": true}
 
 // TopReserved are the names at the top level that a page slug cannot take. Such a page is
-// registered only as `po page <slug>`.
+// registered only as `pharma page <slug>`.
 var TopReserved = map[string]bool{
 	"login": true, "logout": true, "whoami": true, "version": true, "config": true, "auth": true,
 	"api": true, "query": true, "exit-codes": true, "help": true, "completion": true, "get": true, "list": true, "page": true,

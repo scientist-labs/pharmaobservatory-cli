@@ -52,22 +52,22 @@ var builtins = map[string]Profile{
 
 // Dir returns the config directory (not created).
 func Dir() (string, error) {
-	if d := os.Getenv("PO_CONFIG_DIR"); d != "" {
+	if d := os.Getenv("PHARMA_CONFIG_DIR"); d != "" {
 		return d, nil
 	}
 	if runtime.GOOS == "windows" {
 		if d := os.Getenv("AppData"); d != "" {
-			return filepath.Join(d, "po"), nil
+			return filepath.Join(d, "pharma"), nil
 		}
 	}
 	if d := os.Getenv("XDG_CONFIG_HOME"); d != "" {
-		return filepath.Join(d, "po"), nil
+		return filepath.Join(d, "pharma"), nil
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(home, ".config", "po"), nil
+	return filepath.Join(home, ".config", "pharma"), nil
 }
 
 // EnsureDir creates the config directory 0700 and returns it.
@@ -115,13 +115,13 @@ func Save(f File) error {
 	return os.WriteFile(filepath.Join(d, "config.yml"), b, 0o600)
 }
 
-// SelectName applies the selection order: flag, $PO_PROFILE, default_profile, prod.
+// SelectName applies the selection order: flag, $PHARMA_PROFILE, default_profile, prod.
 func SelectName(flag string, f File) string {
 	switch {
 	case flag != "":
 		return flag
-	case os.Getenv("PO_PROFILE") != "":
-		return os.Getenv("PO_PROFILE")
+	case os.Getenv("PHARMA_PROFILE") != "":
+		return os.Getenv("PHARMA_PROFILE")
 	case f.DefaultProfile != "":
 		return f.DefaultProfile
 	}

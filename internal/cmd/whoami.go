@@ -249,7 +249,7 @@ func newLogoutCmd(g *globals, d Deps) *cobra.Command {
 	}
 }
 
-// newAuthCmd is the hidden `po auth refresh`, to force a refresh and check the audience.
+// newAuthCmd is the hidden `pharma auth refresh`, to force a refresh and check the audience.
 func newAuthCmd(g *globals, d Deps) *cobra.Command {
 	auth := &cobra.Command{Use: "auth", Short: "Credential maintenance", Hidden: true,
 		RunE: func(cmd *cobra.Command, args []string) error {

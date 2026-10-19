@@ -23,7 +23,7 @@ func TestVersionDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := "po version dev (commit dev, built dev)"; !strings.Contains(out, want) {
+	if want := "pharma version dev (commit dev, built dev)"; !strings.Contains(out, want) {
 		t.Fatalf("got %q want %q", out, want)
 	}
 }

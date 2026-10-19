@@ -7,22 +7,24 @@ pushes a tag.
 ## Where the binary name lives
 
 `BINARY_NAME` in the `env:` block at the top of `.goreleaser.yml`. The archives, the build output
-(`po.exe` on Windows), the deb and rpm `/usr/bin` entry, the brew install and test lines, and, through
+(`pharma.exe` on Windows), the deb and rpm `/usr/bin` entry, the brew install and test lines, and, through
 the `apierr.Bin` ldflag, the root command's `Use`, the `version` output, help and remedy text and the
 User-Agent all read it.
 Verified: setting it to another value and running `goreleaser release --snapshot` yields archives,
 packages, a formula and a `version` line under the new name.
 
-A rename is one line for packaging. These are NOT derived and are a separate edit if the name changes:
-the module path and `cmd/po` directory, the `PO_*` environment variables, the config directory name
-(`po`, in `internal/config`) and the keychain service name (`po`, in `internal/auth/store`). The package, formula and apt
-and yum repository name is `pharmaobservatory` (the project name) and stays whatever the binary is called.
+The executable is `pharma` (owner decision 2026-10-19; the CLI was never released under another name).
+These are NOT derived from `BINARY_NAME` and are literals: the module path and `cmd/pharma` directory, the
+`PHARMA_*` environment variables, the config directory name (`pharma`, in `internal/config`), the keychain
+service name (`pharma`, in `internal/auth/store`), and `package_name` and the formula `name` in
+`.goreleaser.yml` (both `pharma`). The apt and yum repository name, the keyring files and the GitHub project
+name stay `pharmaobservatory`.
 
 ## Install instructions (draft for the README, ticket #10)
 
 Homebrew (macOS and Linux):
 
-    brew install scientist-labs/pharmaobservatory/pharmaobservatory
+    brew install scientist-labs/pharmaobservatory/pharma
 
 Debian and Ubuntu (apt):
 
@@ -31,12 +33,12 @@ Debian and Ubuntu (apt):
       | sudo tee /usr/share/keyrings/pharmaobservatory-archive-keyring.gpg >/dev/null
     echo "deb [signed-by=/usr/share/keyrings/pharmaobservatory-archive-keyring.gpg] https://packages.pharmaobservatory.com/apt stable main" \
       | sudo tee /etc/apt/sources.list.d/pharmaobservatory.list
-    sudo apt-get update && sudo apt-get install pharmaobservatory
+    sudo apt-get update && sudo apt-get install pharma
 
 Fedora, RHEL and derivatives (dnf or yum):
 
     sudo curl -fsSL -o /etc/yum.repos.d/pharmaobservatory.repo https://packages.pharmaobservatory.com/rpm/pharmaobservatory.repo
-    sudo dnf install pharmaobservatory
+    sudo dnf install pharma
 
 The repository metadata is signed, the individual packages are not (`gpgcheck=0`, `repo_gpgcheck=1`).
 

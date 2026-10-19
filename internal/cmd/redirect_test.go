@@ -44,9 +44,9 @@ const otherHost = "example.com"
 
 func newRedirEnv(t *testing.T) *redirEnv {
 	r := &redirEnv{t: t, bounce: map[string]string{}, kr: &fakeKR{m: map[string]string{}}, clock: time.Date(2026, 10, 18, 12, 0, 0, 0, time.UTC)}
-	t.Setenv("PO_CONFIG_DIR", filepath.Join(t.TempDir(), "po"))
-	t.Setenv("PO_CREDENTIAL_STORE", "")
-	t.Setenv("PO_PROFILE", "")
+	t.Setenv("PHARMA_CONFIG_DIR", filepath.Join(t.TempDir(), "pharma"))
+	t.Setenv("PHARMA_CREDENTIAL_STORE", "")
+	t.Setenv("PHARMA_PROFILE", "")
 	r.sink = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		r.hits.Add(1)
 		_, _ = w.Write([]byte(`{}`))
