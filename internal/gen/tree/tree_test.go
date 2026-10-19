@@ -125,7 +125,7 @@ func TestReservedNameCollisions(t *testing.T) {
 			login = string(f.Data)
 		}
 	}
-	if !strings.Contains(login, `Slug: "login", Escaped: true`) {
+	if !strings.Contains(login, `Slug: "login", Command: "login", Escaped: true`) {
 		t.Errorf("login page not escaped:\n%s", login)
 	}
 }
@@ -222,5 +222,92 @@ func TestNonGetAndForeignPathsAreUnmapped(t *testing.T) {
 	want := "GET /api/v1/whoami,GET /api/v1/widgets/{id}/deep/er,GET /other/path"
 	if got := strings.Join(m.Unmapped, ","); got != want {
 		t.Fatalf("got %s", got)
+	}
+}
+
+// An object type with an underscore (cell_lines) maps to its kebab command, and a get whose path
+// parameter is not {id} (datasets/{name}) maps with that parameter as its positional argument.
+func TestUnderscorePagesAndNamedPathParameter(t *testing.T) {
+	dir := fixture(t)
+	edit(t, dir, "api/openapi.yaml", "  /api/v1/whoami:", `  /api/v1/cell_lines/{name}:
+    get:
+      operationId: cell_lines.get
+      tags: [cell_lines]
+      parameters:
+      - {name: name, in: path, required: true, schema: {type: string}}
+  /api/v1/cell_lines/{name}/site_trials:
+    get:
+      operationId: cell_lines.site_trials
+      tags: [cell_lines]
+      parameters:
+      - {name: name, in: path, required: true, schema: {type: string}}
+  /api/v1/whoami:`)
+	b, err := os.ReadFile(filepath.Join(dir, "api_widgets.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	src := string(b) + `
+type CellLinesAPIService service
+
+type ApiCellLinesGetRequest struct {
+	ctx        context.Context
+	ApiService *CellLinesAPIService
+	name       string
+}
+
+func (a *CellLinesAPIService) CellLinesGet(ctx context.Context, name string) ApiCellLinesGetRequest {
+	return ApiCellLinesGetRequest{ApiService: a, ctx: ctx, name: name}
+}
+
+func (a *CellLinesAPIService) CellLinesGetExecute(r ApiCellLinesGetRequest) (*http.Response, error) {
+	var localVarHTTPMethod = http.MethodGet
+	localVarPath := localBasePath + "/api/v1/cell_lines/{name}"
+	_ = localVarHTTPMethod
+	_ = localVarPath
+	return nil, nil
+}
+
+type ApiCellLinesSiteTrialsRequest struct {
+	ctx        context.Context
+	ApiService *CellLinesAPIService
+	name       string
+}
+
+func (a *CellLinesAPIService) CellLinesSiteTrials(ctx context.Context, name string) ApiCellLinesSiteTrialsRequest {
+	return ApiCellLinesSiteTrialsRequest{ApiService: a, ctx: ctx, name: name}
+}
+
+func (a *CellLinesAPIService) CellLinesSiteTrialsExecute(r ApiCellLinesSiteTrialsRequest) (*http.Response, error) {
+	var localVarHTTPMethod = http.MethodGet
+	localVarPath := localBasePath + "/api/v1/cell_lines/{name}/site_trials"
+	_ = localVarHTTPMethod
+	_ = localVarPath
+	return nil, nil
+}
+`
+	if err := os.WriteFile(filepath.Join(dir, "api_widgets.go"), []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	edit(t, dir, "client.go", "WidgetsAPI *WidgetsAPIService", "WidgetsAPI *WidgetsAPIService\n\tCellLinesAPI *CellLinesAPIService")
+	m := build(t, dir)
+	g := find(m, KindGet, "cell_lines", "")
+	if g == nil || g.IDName != "name" || !g.HasID || g.Service != "CellLinesAPI" {
+		t.Fatalf("get: %+v", g)
+	}
+	if d := find(m, KindIDSection, "cell_lines", "site_trials"); d == nil || d.IDName != "name" {
+		t.Fatalf("dataset: %+v", d)
+	}
+	files, err := Render(m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var page string
+	for _, f := range files {
+		if f.Name == "zz_generated_cell_lines.go" {
+			page = string(f.Data)
+		}
+	}
+	if !strings.Contains(page, `Slug: "cell_lines", Command: "cell-lines"`) || !strings.Contains(page, `IDName: "name"`) {
+		t.Fatalf("cell_lines page:\n%s", page)
 	}
 }

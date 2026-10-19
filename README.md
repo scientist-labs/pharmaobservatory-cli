@@ -67,33 +67,55 @@ Manager). Where none is available, or with `PO_CREDENTIAL_STORE=file`, it lives 
 
 ## Commands
 
-One command group per page (`biomarkers`, `cell-lines`, `orgs`), generated from the API document. There
-are four shapes:
+One command group per object type (`biomarkers`, `cell-lines`, `companies`, `legal-entities`, `sites`),
+plus `datasets` for the catalog, generated from the API document. The shapes:
 
 ```sh
-po orgs list                          # a page's list
-po orgs get <id>                      # one record
-po orgs get <id> <section>            # one section of a record
-po biomarkers hub_tier_tables         # a collection section (no id)
+po companies list                                  # the object type's primary dataset
+po companies get <id>                              # one record and the datasets reachable from it
+po companies get <id> sponsor-trials               # one dataset of a record
+po datasets list                                   # every published dataset
+po datasets get <name>                             # one dataset's grain and columns
 ```
 
-Real section keys: `po orgs get <id> identity`, `po biomarkers get EGFR evidence_over_time`,
-`po cell-lines status_counts --species human`. Ids are passed through verbatim. Put the id and section
-before any flags. `po <page> --help` lists the sections and their parameters; a parameter named like a
-global flag (for example `--json`) is exposed as `--param-json`. A section whose key is also a command
-name (`list`, `get`, `help`, `completion`, `section`) is reached as `po <page> section <key>`.
+Real examples: `po companies get <id> sponsor-trials --scope group`, `po sites get <id> site-trials`,
+`po biomarkers get ESR1 biomarker-evidence`. Command and dataset names are the API's names with `-` for
+`_`, and the API's own spelling works too (`po cell_lines list`, `po sites get <id> site_trials`). Ids
+are passed through verbatim. Put the id and dataset before any flags. `po <object> --help` lists the
+datasets; `po <object> get <id> <dataset> --help` lists a dataset's flags. A parameter named like a
+global flag (for example `--json`) is exposed as `--param-json`.
+
+Every dataset read takes the paging and shaping flags the API document declares (`--limit`, `--cursor`,
+`--sort`, `--group-by`, `--measure`, and `--scope` on company datasets), plus `--filter`, repeatable,
+which uses the server's filter grammar keyed by column:
+
+```sh
+po biomarkers list --filter gene_symbol=EGFR --filter evidence_tier.lte=2 --sort -n_trial_mention
+po biomarkers list --group-by biomarker_kind --measure count
+```
+
+`--filter column=value` is equality (a repeated column is an IN list); `column.gt`, `.gte`, `.lt`,
+`.lte`, `.ne`, `.contains` and `.null` are the other operators. The server checks every filter.
 
 ### Output
 
-The default is a table, with a footer on stderr (as-of date, link, paging). Other forms:
+The default is a table, with a footer on stderr (source credit, as-of date, paging). Other forms:
 
 ```sh
-po biomarkers list --kind gene --limit 5 --json   # the server's body, unchanged
-po biomarkers list --kind gene --limit 5 --csv    # CSV built from the response columns
+po biomarkers list --limit 5 --json   # the server's body, unchanged
+po biomarkers list --limit 5 --csv    # CSV built from the response columns
 ```
 
-`--json` and `--csv` cannot be combined. `--quiet` (alias `--no-footer`) drops the as-of, link and
-paging lines.
+A record prints its fields (attribute datasets folded in as `dataset.field`), then the datasets
+reachable from it. The footer names the withheld columns when the server withheld any, and says when
+the server answered for a retired id with its current one (`redirected: <old> is now <new>`); both
+print even with `--quiet`.
+
+`--json` and `--csv` cannot be combined. `--quiet` (alias `--no-footer`) drops the as-of and paging
+lines.
+
+CSV cells are written exactly as the server returned them. A value that starts with `=`, `+`, `-` or
+`@` may be evaluated as a formula by a spreadsheet, so open CSV files from untrusted queries with care.
 
 ### Paging with `--all`
 
@@ -101,11 +123,11 @@ paging lines.
 with `--json`; use `--cursor` to page by hand. The walk stops early, prints what it has, marks the
 output partial and exits 9 when:
 
-- the operation takes no `--cursor`;
+- the operation takes no `--cursor` (a record or the catalog);
 - the server returns a cursor it already returned;
 - it reaches 1000 pages.
 
-A failure partway through (for example a 429) also stops the walk.
+A failure partway through (for example a 429) also stops the walk. `--filter` applies to every page.
 
 ### SQL with `query`
 

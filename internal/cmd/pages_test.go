@@ -42,14 +42,14 @@ func (e *env) lastSeen(t *testing.T) string {
 
 func TestListFlagsReachTheQueryAndBodyIsRaw(t *testing.T) {
 	e := loggedIn(t)
-	out, err := e.po("biomarkers", "list", "--kind", "gene", "--limit", "5", "--facets", "--json")
+	out, err := e.po("biomarkers", "list", "--sort", "-evidence_tier", "--limit", "5", "--group-by", "biomarker_kind", "--measure", "count", "--filter", "gene_symbol=EGFR", "--json")
 	if err != nil {
 		t.Fatalf("%v\n%s", err, out)
 	}
 	if out != rawBody {
 		t.Fatalf("not the raw body:\n%q", out)
 	}
-	if got := e.lastSeen(t); got != "/api/v1/biomarkers?facets=true&kind=gene&limit=5" {
+	if got := e.lastSeen(t); got != "/api/v1/biomarkers?group_by=biomarker_kind&limit=5&measure=count&sort=-evidence_tier&gene_symbol=EGFR" {
 		t.Fatalf("request: %s", got)
 	}
 	if want := "Bearer " + e.stored().AccessToken; e.apiAuth[0] != want {
@@ -62,14 +62,14 @@ func TestUnsetFlagsAreNotSent(t *testing.T) {
 	if _, err := e.po("cell-lines", "list", "--json"); err != nil {
 		t.Fatal(err)
 	}
-	if got := e.lastSeen(t); got != "/api/v1/cell-lines" {
+	if got := e.lastSeen(t); got != "/api/v1/cell_lines" {
 		t.Fatalf("request: %s", got)
 	}
 	// a zero value that was explicitly set is sent
-	if _, err := e.po("cell-lines", "list", "--limit", "0", "--facets=false", "--json"); err != nil {
+	if _, err := e.po("cell-lines", "list", "--limit", "0", "--sort=", "--json"); err != nil {
 		t.Fatal(err)
 	}
-	if got := e.lastSeen(t); got != "/api/v1/cell-lines?facets=false&limit=0" {
+	if got := e.lastSeen(t); got != "/api/v1/cell_lines?limit=0&sort=" {
 		t.Fatalf("request: %s", got)
 	}
 }
@@ -91,52 +91,43 @@ func TestGetPassesIDVerbatimAndEncodesOnce(t *testing.T) {
 	}
 }
 
-func TestGetSectionWithItsOwnFlag(t *testing.T) {
+func TestGetDatasetWithItsOwnFlag(t *testing.T) {
 	e := loggedIn(t)
 	for _, args := range [][]string{
-		{"biomarkers", "get", "EGFR", "relations", "--chemicals", "gefitinib", "--json"},
-		{"--json", "biomarkers", "get", "EGFR", "relations", "--chemicals=gefitinib"},
+		{"biomarkers", "get", "ESR1", "biomarker-evidence", "--limit", "5", "--json"},
+		{"--json", "biomarkers", "get", "ESR1", "biomarker_evidence", "--limit=5"},
 	} {
 		out, err := e.po(args...)
 		if err != nil || out != rawBody {
 			t.Fatalf("%v: %v %q", args, err, out)
 		}
-		if got := e.lastSeen(t); got != "/api/v1/biomarkers/EGFR/relations?chemicals=gefitinib" {
+		if got := e.lastSeen(t); got != "/api/v1/biomarkers/ESR1/biomarker_evidence?limit=5" {
 			t.Fatalf("request: %s", got)
 		}
 	}
-	if _, err := e.po("orgs", "get", "company:42", "identity", "--json"); err != nil {
-		t.Fatal(err)
-	}
-	if got := e.lastSeen(t); got != "/api/v1/orgs/company:42/identity" {
-		t.Fatalf("request: %s", got)
-	}
-}
-
-func TestCollectionSections(t *testing.T) {
-	e := loggedIn(t)
-	if _, err := e.po("biomarkers", "hub_tier_tables", "--json"); err != nil {
-		t.Fatal(err)
-	}
-	if got := e.lastSeen(t); got != "/api/v1/biomarkers/hub_tier_tables" {
-		t.Fatalf("request: %s", got)
-	}
-	if _, err := e.po("cell-lines", "status_counts", "--species", "human", "--json"); err != nil {
-		t.Fatal(err)
-	}
-	if got := e.lastSeen(t); got != "/api/v1/cell-lines/status_counts?species=human" {
-		t.Fatalf("request: %s", got)
+	for args, want := range map[string]string{
+		"companies get company:42 sponsor_trials --scope group": "/api/v1/companies/company:42/sponsor_trials?scope=group",
+		"sites get site:7 site-trials --cursor abc":             "/api/v1/sites/site:7/site_trials?cursor=abc",
+		"datasets get site_trials":                              "/api/v1/datasets/site_trials",
+		"datasets list":                                         "/api/v1/datasets",
+	} {
+		if _, err := e.po(append(strings.Fields(args), "--json")...); err != nil {
+			t.Fatalf("%s: %v", args, err)
+		}
+		if got := e.lastSeen(t); got != want {
+			t.Fatalf("%s: request %s want %s", args, got, want)
+		}
 	}
 }
 
-func TestUnknownSectionFailsLocallyWithValidKeys(t *testing.T) {
+func TestUnknownDatasetFailsLocallyWithValidKeys(t *testing.T) {
 	e := loggedIn(t)
 	n := len(e.seen)
 	_, err := e.po("biomarkers", "get", "EGFR", "nonsense")
 	if err == nil || apierr.ExitCode(err) != apierr.ExitUsage {
 		t.Fatalf("%v", err)
 	}
-	if !strings.Contains(err.Error(), `unknown section "nonsense"`) || !strings.Contains(err.Error(), "evidence_over_time") {
+	if !strings.Contains(err.Error(), `unknown dataset "nonsense"`) || !strings.Contains(err.Error(), "biomarker-evidence") {
 		t.Fatalf("message: %v", err)
 	}
 	if len(e.seen) != n {
@@ -148,8 +139,9 @@ func TestGetUsageErrors(t *testing.T) {
 	e := loggedIn(t)
 	for _, args := range [][]string{
 		{"biomarkers", "get"},
-		{"biomarkers", "get", "a", "relations", "extra"},
-		{"biomarkers", "get", "EGFR", "relations", "--no-such-flag"},
+		{"biomarkers", "get", "a", "biomarker-evidence", "extra"},
+		{"biomarkers", "get", "EGFR", "biomarker-evidence", "--no-such-flag"},
+		{"biomarkers", "get", "EGFR", "biomarker-evidence", "--filter", "novalue"},
 		{"biomarkers", "list", "extra"},
 		{"biomarkers", "nonsense"},
 		{"biomarkers", "list", "--limit", "abc"},
@@ -168,22 +160,25 @@ func TestGetUsageErrors(t *testing.T) {
 func TestHelpTextComesFromTheSpec(t *testing.T) {
 	e := loggedIn(t)
 	out, err := e.po("biomarkers", "--help")
-	if err != nil || !strings.Contains(out, "evidence_over_time") || !strings.Contains(out, "hub_tier_tables") || !strings.Contains(out, "Biomarker evidence, labeled by type") {
+	if err != nil || !strings.Contains(out, "biomarker-evidence") || !strings.Contains(out, "FDA biomarker qualification projects") {
 		t.Fatalf("%v\n%s", err, out)
 	}
 	out, err = e.po("biomarkers", "list", "--help")
-	if err != nil || !strings.Contains(out, "--kind") || !strings.Contains(out, "--limit int32") {
+	if err != nil || !strings.Contains(out, "--group-by") || !strings.Contains(out, "--limit int32") || !strings.Contains(out, "--filter") {
 		t.Fatalf("%v\n%s", err, out)
 	}
 	out, err = e.po("biomarkers", "get", "--help")
-	if err != nil || !strings.Contains(out, "get <id> [section]") {
+	if err != nil || !strings.Contains(out, "get <id> [dataset]") {
 		t.Fatalf("%v\n%s", err, out)
 	}
-	out, err = e.po("biomarkers", "get", "EGFR", "relations", "--help")
-	if err != nil || !strings.Contains(out, "--chemicals") || !strings.Contains(out, "GET /api/v1/biomarkers/{id}/relations") {
+	out, err = e.po("biomarkers", "get", "EGFR", "biomarker-evidence", "--help")
+	if err != nil || !strings.Contains(out, "--cursor") || !strings.Contains(out, "GET /api/v1/biomarkers/{id}/biomarker_evidence") || !strings.Contains(out, "get <id> biomarker-evidence") {
 		t.Fatalf("%v\n%s", err, out)
 	}
 	if out, err = e.po("biomarkers"); err != nil || !strings.Contains(out, "Available Commands") {
+		t.Fatalf("%v\n%s", err, out)
+	}
+	if out, err = e.po("datasets", "get", "--help"); err != nil || !strings.Contains(out, "get <name>") {
 		t.Fatalf("%v\n%s", err, out)
 	}
 	if len(e.seen) != 0 {
@@ -199,8 +194,8 @@ func TestNotLoggedInExitsThree(t *testing.T) {
 	e.seen = nil
 	for _, args := range [][]string{
 		{"biomarkers", "list", "--json"},
-		{"orgs", "get", "company:1", "identity"},
-		{"cell-lines", "status_counts"},
+		{"companies", "get", "company:1", "sponsor-trials"},
+		{"sites", "get", "site:1", "site_trials"},
 		{"api", "biomarkers"},
 	} {
 		out, err := e.po(args...)
@@ -289,7 +284,7 @@ func TestTypedDecodeFailureWarnsAndStillPrintsTheRawBody(t *testing.T) {
 	if out != "[1,2]\n" {
 		t.Fatalf("stdout must stay the raw body: %q", out)
 	}
-	if w := e.errBuf.String(); !strings.Contains(w, "warning: the SDK (v0.1.2)") || !strings.Contains(w, "SDK bug") {
+	if w := e.errBuf.String(); !strings.Contains(w, "warning: the SDK (v0.1.3)") || !strings.Contains(w, "SDK bug") {
 		t.Fatalf("stderr: %q", w)
 	}
 }

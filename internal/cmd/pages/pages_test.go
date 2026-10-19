@@ -23,7 +23,11 @@ const sdkModule = "github.com/scientist-labs/pharmaobservatory-sdks/go"
 // handMapped are the document's non-page operations, each mapped by hand in internal/cmd. A new
 // non-page operation in a bumped SDK fails TestNonPageOperationsAreHandMapped until it is mapped
 // there and added here.
-var handMapped = []string{"GET /api/v1/whoami"} // po whoami
+var handMapped = []string{
+	"GET /api/v1/whoami",              // po whoami
+	"POST /api/v1/query",              // po query
+	"GET /api/v1/results/{result_id}", // po query --result
+}
 
 func realModel(t *testing.T) *tree.Model {
 	t.Helper()
@@ -82,22 +86,23 @@ func TestEveryOperationIsReachableInTheCobraTree(t *testing.T) {
 	root := &cobra.Command{Use: "po"}
 	root.AddCommand(Build(&Env{})...)
 	for _, o := range Operations {
+		page := tree.Kebab(o.Page)
 		var path []string
 		switch o.Kind {
 		case tree.KindList:
-			path = []string{o.Page, "list"}
+			path = []string{page, "list"}
 		case tree.KindGet:
-			path = []string{o.Page, "get"}
+			path = []string{page, "get"}
 		case tree.KindIDSection:
-			get, _, err := root.Find([]string{o.Page, "get"})
-			if err != nil || !strings.Contains(get.Long, "  "+o.Key+" ") {
+			get, _, err := root.Find([]string{page, "get"})
+			if err != nil || !strings.Contains(get.Long, "  "+tree.Kebab(o.Key)+" ") {
 				t.Errorf("%+v: not listed in get help (%v)", o, err)
 			}
 			continue
 		case tree.KindSection:
-			path = []string{o.Page, o.Key}
-			if tree.PageReserved[o.Key] {
-				path = []string{o.Page, "section", o.Key}
+			path = []string{page, tree.Kebab(o.Key)}
+			if tree.PageReserved[tree.Kebab(o.Key)] {
+				path = []string{page, "section", tree.Kebab(o.Key)}
 			}
 		}
 		if tree.PageEscaped(o.Page) {
@@ -113,7 +118,9 @@ func TestEveryOperationIsReachableInTheCobraTree(t *testing.T) {
 func TestEveryQueryParameterIsAFlag(t *testing.T) {
 	m := realModel(t)
 	byRef := map[OpRef]*Op{}
-	for _, p := range allPages() {
+	pages := allPages()
+	buildFrom(&Env{}, pages) // adds the hand-written --filter
+	for _, p := range pages {
 		add := func(kind string, o *Op) {
 			if o != nil {
 				byRef[OpRef{Page: p.Slug, Kind: kind, Key: o.Key, Path: o.Path}] = o
@@ -139,16 +146,21 @@ func TestEveryQueryParameterIsAFlag(t *testing.T) {
 		for _, p := range o.Params {
 			want = append(want, p.Flag)
 		}
+		if g.Flags.Lookup("cursor") != nil {
+			want = append(want, "filter") // hand-written on every dataset read, see filterFlag
+		}
 		sort.Strings(have)
 		sort.Strings(want)
 		if strings.Join(have, ",") != strings.Join(want, ",") {
 			t.Errorf("%s: flags %v want %v", o.Path, have, want)
 		}
 	}
-	// the ticket's flags
+	// the dataset paging and grouping parameters, and the hand-written filter
 	for _, c := range []struct{ page, kind, flag string }{
-		{"biomarkers", tree.KindList, "kind"}, {"biomarkers", tree.KindList, "limit"},
-		{"biomarkers", tree.KindList, "cursor"}, {"cell-lines", tree.KindSection, "species"},
+		{"biomarkers", tree.KindList, "limit"}, {"biomarkers", tree.KindList, "cursor"},
+		{"biomarkers", tree.KindList, "sort"}, {"biomarkers", tree.KindList, "group-by"},
+		{"biomarkers", tree.KindList, "measure"}, {"biomarkers", tree.KindList, "filter"},
+		{"companies", tree.KindIDSection, "scope"}, {"cell_lines", tree.KindList, "cursor"},
 	} {
 		found := false
 		for r, o := range byRef {
@@ -211,5 +223,51 @@ func TestDecodeWarningIsOneSanitizedLine(t *testing.T) {
 	got := errBuf.String()
 	if strings.Contains(got, "\x1b") || strings.Count(got, "\n") != 1 || !strings.HasSuffix(got, "\n") {
 		t.Fatalf("not a single clean line: %q", got)
+	}
+}
+
+func TestKebabCommandsAcceptTheAPINames(t *testing.T) {
+	root := &cobra.Command{Use: "po"}
+	root.AddCommand(Build(&Env{})...)
+	for _, path := range [][]string{{"cell-lines", "list"}, {"cell_lines", "list"}, {"legal-entities", "get"}, {"datasets", "get"}, {"datasets", "list"}, {"sites", "get"}} {
+		if c, rest, err := root.Find(path); err != nil || len(rest) != 0 || c.Name() != path[1] {
+			t.Errorf("%v: not reachable (%v)", path, err)
+		}
+	}
+	get, _, _ := root.Find([]string{"datasets", "get"})
+	if get.Use != "get <name>" {
+		t.Errorf("datasets get takes a name: %q", get.Use)
+	}
+	sg, _, _ := root.Find([]string{"companies", "get"})
+	if !strings.Contains(sg.Long, "  sponsor-trials ") || sg.Use != "get <id> [dataset]" {
+		t.Errorf("companies get: %q\n%s", sg.Use, sg.Long)
+	}
+}
+
+func TestFilterFlagBuildsTheQueryAndRefusesReservedKeys(t *testing.T) {
+	fs := pflag.NewFlagSet("x", pflag.ContinueOnError)
+	o := &Op{Flags: fs}
+	fs.String("cursor", "", "")
+	addFilterFlag(o)
+	if err := fs.Parse([]string{"--filter", "kind=gene", "--filter", "kind=variant", "--filter", "n.gt=3"}); err != nil {
+		t.Fatal(err)
+	}
+	q, err := filters(fs)
+	if err != nil || q.Encode() != "kind=gene&kind=variant&n.gt=3" {
+		t.Fatalf("%v %s", err, q.Encode())
+	}
+	for _, bad := range []string{"novalue", "=x", "limit=5", "group_by.ne=x"} {
+		fs := pflag.NewFlagSet("x", pflag.ContinueOnError)
+		fs.String("cursor", "", "")
+		addFilterFlag(&Op{Flags: fs})
+		_ = fs.Parse([]string{"--filter", bad})
+		if _, err := filters(fs); err == nil {
+			t.Errorf("%q: want a usage error", bad)
+		}
+	}
+	plain := pflag.NewFlagSet("y", pflag.ContinueOnError)
+	addFilterFlag(&Op{Flags: plain})
+	if plain.Lookup("filter") != nil {
+		t.Error("an operation without --cursor (a record get) takes no --filter")
 	}
 }

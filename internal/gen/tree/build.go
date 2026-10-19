@@ -72,19 +72,20 @@ func Build(dir, module, version string) (*Model, error) {
 		}
 		op := Op{Page: page, Kind: kind, Key: key, Path: r.Path, OperationID: r.Op.OperationID,
 			Summary: strings.TrimSpace(r.Op.Summary), Service: field, Method: so.Method,
-			HasID: strings.Contains(r.Path, "{id}")}
+			IDName: pathParam(r.Path)}
+		op.HasID = op.IDName != ""
 		wantPos := 0
 		if op.HasID {
 			wantPos = 1
 		}
-		if len(so.Positional) != wantPos || (wantPos == 1 && so.Positional[0] != "id") {
+		if len(so.Positional) != wantPos || (wantPos == 1 && so.Positional[0] != op.IDName) {
 			return nil, fmt.Errorf("GET %s: SDK positional parameters %v do not match the path", r.Path, so.Positional)
 		}
 		specQ := map[string]specParam{}
 		for _, p := range r.Op.Parameters {
 			switch p.In {
 			case "path":
-				if p.Name != "id" {
+				if p.Name != op.IDName {
 					return nil, fmt.Errorf("GET %s: path parameter %q is not supported", r.Path, p.Name)
 				}
 			case "query":
@@ -141,7 +142,7 @@ func Build(dir, module, version string) (*Model, error) {
 			return nil, fmt.Errorf("GET %s and %s both map to %s", r.Path, prev, id)
 		}
 		seen[id] = r.Path
-		op.Escaped = kind == KindSection && PageReserved[key]
+		op.Escaped = kind == KindSection && PageReserved[Kebab(key)]
 		pages[page] = true
 		m.Ops = append(m.Ops, op)
 	}
@@ -190,5 +191,5 @@ func CheckAllowlist(unmapped, allow []string) error {
 	return fmt.Errorf("non-page operations not hand-mapped: %v; allowlisted but no longer in the document: %v", unexpected, gone)
 }
 
-// PageEscaped reports whether a page slug collides with a top-level command.
-func PageEscaped(slug string) bool { return TopReserved[slug] }
+// PageEscaped reports whether a page's command name collides with a top-level command.
+func PageEscaped(slug string) bool { return TopReserved[Kebab(slug)] }

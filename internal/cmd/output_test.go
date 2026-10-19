@@ -12,29 +12,30 @@ import (
 	"github.com/scientist-labs/pharmaobservatory-cli/internal/cmd/pages"
 )
 
-func page1(cursorNext, total, basis string) string {
+// page1 is the first page of a dataset read in the published shape: columns named, rows keyed by
+// column name, total and next_cursor at the top level. total is a JSON number or null (a grouped
+// read has no total). The withheld tier and the restriction block carry a tier word that must never
+// be printed.
+func page1(cursorNext, total string) string {
 	next := "null"
 	if cursorNext != "" {
 		next = `"` + cursorNext + `"`
 	}
-	return `{"page":"biomarkers","id":null,"section":"list","heading":"Biomarkers","lens":null,"web_url":"https://example.test/biomarkers",
-"query":{"q":null,"filters":{},"sort":"symbol","dir":"asc","evidence_floor":false,"validated_floor":false},
-"shape":{"kind":"table"},
-"columns":[{"key":"symbol","label":"Symbol","type":"string"},{"key":"note","label":"Note","type":"string"},{"key":"n","label":"Count","type":"integer"}],
+	return `{"dataset":"biomarkers","grain":"one row per biomarker","object_type":null,"id":null,"scope":null,
+"columns":[{"name":"symbol","type":"text","unit":null,"description":"The gene symbol."},{"name":"note","type":"text"},{"name":"n","type":"integer"}],
 "rows":[{"symbol":"EGFR","note":"has, comma","n":3},{"symbol":"KRAS","note":"say \"hi\"","n":null}],
+"total":` + total + `,"next_cursor":` + next + `,"sort":["symbol"],"filters":[],"group_by":[],"measures":[],
 "attribution":[{"name":"HGNC","license":"CC0","href":"https://example.test/hgnc"},{"name":"Open Targets","license":null,"href":"https://example.test/ot"}],
-"pagination":{"limit":2,"total":` + total + `,"total_basis":"` + basis + `","page":1,"next_cursor":` + next + `,"prev_cursor":null},
+"source_credit":"Source: HGNC (CC0); Open Targets","withheld_tiers":["licensable"],"withheld_columns":[],
+"freshness":{"source":"hgnc","last_loaded":"2026-10-17T06:00:00Z"},"build":{"generation":"g7","fingerprint":"f"},
 "build_state":{"built":true,"generation":"g7","last_loaded":"2026-10-17T06:00:00Z"},
-"resolution_confidence":{"match_tier":"exact","verdict":"accepted"},
-"tier":"licensable"}`
+"restriction":{"tier":"licensable"}}`
 }
 
-const lastPage = `{"query":{"q":null,"filters":{},"sort":"symbol","dir":"asc","evidence_floor":false,"validated_floor":false},
-"shape":{"kind":"table"},
-"columns":[{"key":"symbol","label":"Symbol","type":"string"},{"key":"note","label":"Note","type":"string"},{"key":"n","label":"Count","type":"integer"}],
-"rows":[{"symbol":"BRAF","note":"","n":1}],
+const lastPage = `{"dataset":"biomarkers","grain":"one row per biomarker",
+"columns":[{"name":"symbol","type":"text"},{"name":"note","type":"text"},{"name":"n","type":"integer"}],
+"rows":[{"symbol":"BRAF","note":"","n":1}],"total":3,"next_cursor":null,
 "attribution":[{"name":"HGNC","license":"CC0","href":"https://example.test/hgnc"}],
-"pagination":{"limit":2,"total":3,"total_basis":"exact","page":2,"next_cursor":null,"prev_cursor":"c1"},
 "build_state":{"built":true,"generation":"g7","last_loaded":"2026-10-17T06:00:00Z"}}`
 
 func serve(body string) func(http.ResponseWriter, *http.Request) {
@@ -59,14 +60,14 @@ func (e *env) split(args ...string) (string, string, error) {
 	return out, strings.Join(kept, ""), err
 }
 
-func TestTableFromColumnsIsTabSeparatedWithLabelsAndFooterOnStderr(t *testing.T) {
+func TestTableFromColumnsIsTabSeparatedWithNamesAndFooterOnStderr(t *testing.T) {
 	e := loggedIn(t)
-	e.api = serve(page1("c1", "12431", "exact"))
+	e.api = serve(page1("c1", "12431"))
 	out, errOut, err := e.split("biomarkers", "list")
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "Symbol\tNote\tCount\nEGFR\thas, comma\t3\nKRAS\tsay \"hi\"\t\n# Source: HGNC (CC0) https://example.test/hgnc\n# Source: Open Targets https://example.test/ot\n"
+	want := "symbol\tnote\tn\nEGFR\thas, comma\t3\nKRAS\tsay \"hi\"\t\n# Source: HGNC (CC0) https://example.test/hgnc\n# Source: Open Targets https://example.test/ot\n"
 	if out != want {
 		t.Fatalf("stdout %q want %q", out, want)
 	}
@@ -74,8 +75,6 @@ func TestTableFromColumnsIsTabSeparatedWithLabelsAndFooterOnStderr(t *testing.T)
 		"HGNC (CC0) https://example.test/hgnc\n",
 		"Open Targets https://example.test/ot\n",
 		"as of 2026-10-17T06:00:00Z (profile local)\n",
-		"resolved: exact (accepted)\n",
-		"https://example.test/biomarkers\n",
 		"showing 2 of 12,431 (exact); next: --cursor c1\n",
 	} {
 		if !strings.Contains(errOut, s) {
@@ -89,7 +88,7 @@ func TestTableFromColumnsIsTabSeparatedWithLabelsAndFooterOnStderr(t *testing.T)
 
 func TestCSVIsKeysThenRowsQuotedPerRFC4180(t *testing.T) {
 	e := loggedIn(t)
-	e.api = serve(page1("", "2", "exact"))
+	e.api = serve(page1("", "2"))
 	out, errOut, err := e.split("biomarkers", "list", "--csv")
 	if err != nil {
 		t.Fatal(err)
@@ -103,18 +102,15 @@ func TestCSVIsKeysThenRowsQuotedPerRFC4180(t *testing.T) {
 	}
 }
 
-func TestEstimatedTotalIsLabelledAsAnEstimate(t *testing.T) {
+func TestAReadWithNoTotalSaysOnlyWhatItShows(t *testing.T) {
 	e := loggedIn(t)
-	e.api = serve(page1("c1", "12400", "estimated"))
+	e.api = serve(page1("c1", "null"))
 	_, errOut, err := e.split("biomarkers", "list")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(errOut, "showing 2 of about 12,400 (estimated); next: --cursor c1") {
+	if !strings.Contains(errOut, "showing 2; next: --cursor c1") || strings.Contains(errOut, "showing 2 of") {
 		t.Fatalf("%q", errOut)
-	}
-	if strings.Contains(errOut, "12,400 (exact)") || strings.Contains(errOut, "of 12,400") {
-		t.Fatalf("an estimate was printed as exact: %q", errOut)
 	}
 }
 
@@ -127,7 +123,7 @@ func TestAttributionSurvivesEveryFlagCombination(t *testing.T) {
 	}
 	for _, flags := range combos {
 		e := loggedIn(t)
-		e.api = serve(page1("", "2", "exact"))
+		e.api = serve(page1("", "2"))
 		out, errOut, err := e.split(append([]string{"biomarkers", "list"}, flags...)...)
 		if err != nil {
 			t.Fatalf("%v: %v", flags, err)
@@ -149,7 +145,7 @@ func TestAttributionSurvivesEveryFlagCombination(t *testing.T) {
 		}
 		for _, f := range flags {
 			if f == "--quiet" || f == "--no-footer" {
-				if strings.Contains(errOut, "as of") || strings.Contains(errOut, "https://example.test/biomarkers") || strings.Contains(errOut, "showing") {
+				if strings.Contains(errOut, "as of") || strings.Contains(errOut, "showing") {
 					t.Errorf("%v: non-attribution footer lines survived: %q", flags, errOut)
 				}
 			}
@@ -157,7 +153,7 @@ func TestAttributionSurvivesEveryFlagCombination(t *testing.T) {
 	}
 	// --json carries the attribution in the body and prints no footer.
 	e := loggedIn(t)
-	e.api = serve(page1("", "2", "exact"))
+	e.api = serve(page1("", "2"))
 	out, errOut, err := e.split("biomarkers", "list", "--json")
 	if err != nil || !strings.Contains(out, `"attribution"`) || errOut != "" {
 		t.Fatalf("json: %v stdout=%q stderr=%q", err, out, errOut)
@@ -171,7 +167,7 @@ func TestAllFollowsTheCursorWithOneHeaderAndCountsRows(t *testing.T) {
 		c := r.URL.Query().Get("cursor")
 		cursors = append(cursors, c)
 		if c == "" {
-			serve(page1("c1", "3", "exact"))(w, r)
+			serve(page1("c1", "3"))(w, r)
 			return
 		}
 		serve(lastPage)(w, r)
@@ -183,7 +179,7 @@ func TestAllFollowsTheCursorWithOneHeaderAndCountsRows(t *testing.T) {
 	if strings.Join(cursors, "|") != "|c1" {
 		t.Fatalf("cursors %v", cursors)
 	}
-	if n := strings.Count(out, "Symbol\t"); n != 1 {
+	if n := strings.Count(out, "symbol\t"); n != 1 {
 		t.Fatalf("%d headers in %q", n, out)
 	}
 	if !strings.Contains(out, "BRAF") || !strings.Contains(out, "EGFR") {
@@ -207,7 +203,7 @@ func TestGenerationChangedMidWalkRestartsOnce(t *testing.T) {
 		cursors = append(cursors, c)
 		switch {
 		case c == "":
-			serve(page1("c1", "3", "exact"))(w, r)
+			serve(page1("c1", "3"))(w, r)
 		case conflicts == 0:
 			conflicts++
 			w.WriteHeader(409)
@@ -235,7 +231,7 @@ func TestGenerationChangedTwiceIsPartialExitNine(t *testing.T) {
 	e := loggedIn(t)
 	e.api = func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Query().Get("cursor") == "" {
-			serve(page1("c1", "3", "exact"))(w, r)
+			serve(page1("c1", "3"))(w, r)
 			return
 		}
 		w.WriteHeader(409)
@@ -269,7 +265,7 @@ func TestAnErrorAfterSomePagesIsPartial(t *testing.T) {
 	e := loggedIn(t)
 	e.api = func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Query().Get("cursor") == "" {
-			serve(page1("c1", "3", "exact"))(w, r)
+			serve(page1("c1", "3"))(w, r)
 			return
 		}
 		w.WriteHeader(503)
@@ -304,7 +300,7 @@ func TestUnbuiltIsNotAnEmptyTable(t *testing.T) {
 func TestNotApplicablePrintsTheServerMessageWithItsOwnCode(t *testing.T) {
 	e := loggedIn(t)
 	e.api = serve(`{"error":"not_applicable","message":"applies to a gene or a protein variant, not to this kind of biomarker"}`)
-	out, _, err := e.split("biomarkers", "get", "EGFR", "relations")
+	out, _, err := e.split("biomarkers", "get", "EGFR", "biomarker-evidence")
 	if apierr.ExitCode(err) != apierr.ExitNotAnswered || out != "" {
 		t.Fatalf("exit %d out %q", apierr.ExitCode(err), out)
 	}
@@ -336,43 +332,154 @@ func TestNotEntitledPrintsCreditAndLicenseNotTheTier(t *testing.T) {
 	}
 }
 
-func TestChartAndKpiRenderThroughTheTablePath(t *testing.T) {
-	for _, kind := range []string{"chart", "kpi", "attributes"} {
-		e := loggedIn(t)
-		e.api = serve(`{"page":"biomarkers","id":null,"section":"s","heading":"S","lens":null,"web_url":"https://example.test/s","shape":{"kind":"` + kind + `"},"columns":[{"key":"year","label":"Year","type":"integer"},{"key":"v","label":"Value","type":"number"}],"rows":[{"year":2024,"v":1.5}],"attribution":[],"build_state":{"built":true,"generation":"g1","last_loaded":null}}`)
-		out, errOut, err := e.split("biomarkers", "list")
-		if err != nil || out != "Year\tValue\n2024\t1.5\n" || strings.Contains(errOut, "[") {
-			t.Fatalf("%s: %v %q %q", kind, err, out, errOut)
+func TestAGroupedReadRendersItsOutputColumns(t *testing.T) {
+	e := loggedIn(t)
+	e.api = serve(`{"dataset":"biomarkers","grain":"g","columns":[{"name":"biomarker_kind","type":"text"},{"name":"count","type":"bigint"}],` +
+		`"rows":[{"biomarker_kind":"gene","count":12431},{"biomarker_kind":"protein_variant","count":7}],"total":null,"next_cursor":null,` +
+		`"group_by":["biomarker_kind"],"measures":["count"],"attribution":[],"source_credit":"Source: US FDA","build_state":{"built":true,"generation":"g1","last_loaded":null}}`)
+	out, errOut, err := e.split("biomarkers", "list", "--group-by", "biomarker_kind", "--measure", "count")
+	if err != nil || out != "biomarker_kind\tcount\ngene\t12431\nprotein_variant\t7\n# Source: US FDA\n" {
+		t.Fatalf("%v %q %q", err, out, errOut)
+	}
+	if got := e.lastSeen(t); got != "/api/v1/biomarkers?group_by=biomarker_kind&measure=count" {
+		t.Fatalf("request: %s", got)
+	}
+	if !strings.Contains(errOut, "US FDA\n") || !strings.Contains(errOut, "showing 2\n") {
+		t.Fatalf("the source_credit is the credit when no attribution list is sent: %q", errOut)
+	}
+}
+
+func TestWithheldColumnsAreNamedButTheTierNever(t *testing.T) {
+	e := loggedIn(t)
+	body := strings.Replace(page1("", "2"), `"withheld_columns":[]`, `"withheld_columns":["ticker","source_link"]`, 1)
+	e.api = serve(body)
+	for _, flags := range [][]string{{}, {"--quiet"}, {"--csv"}} {
+		out, errOut, err := e.split(append([]string{"biomarkers", "list"}, flags...)...)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(errOut, "withheld columns: ticker, source_link\n") {
+			t.Errorf("%v: %q", flags, errOut)
+		}
+		if strings.Contains(out+errOut, "licensable") {
+			t.Errorf("%v: the tier was printed", flags)
 		}
 	}
 }
 
-func TestGetPrintsIdentityThenTheSectionsIndexIncludingUnavailable(t *testing.T) {
+func TestFilterReachesEveryPageOfAWalk(t *testing.T) {
 	e := loggedIn(t)
-	e.api = serve(`{"page":"biomarkers","id":"EGFR",
-"identity":{"columns":[{"key":"key","label":"Field","type":"string"}],"rows":[{"key":"symbol","label":"Symbol","value":"EGFR"},{"key":"n","label":"Aliases","value":4},{"key":"x","label":"Empty","value":null}]},
-"sections":[{"key":"relations","heading":"Relations","available":true,"kind":"table"},{"key":"assays","heading":"Assays","available":false,"kind":"table"}],
-"attribution":[{"name":"HGNC","license":"CC0","href":"https://example.test/hgnc"}],
-"web_url":"https://example.test/biomarkers/EGFR",
-"build_state":{"built":true,"generation":"g7","last_loaded":null},
-"resolution_confidence":{"match_tier":"exact","verdict":"accepted"}}`)
-	out, errOut, err := e.split("biomarkers", "get", "EGFR")
+	e.api = func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("cursor") == "" {
+			serve(page1("c1", "3"))(w, r)
+			return
+		}
+		serve(lastPage)(w, r)
+	}
+	if _, _, err := e.split("biomarkers", "list", "--filter", "biomarker_kind=gene", "--filter", "n.gt=2", "--all", "--limit", "2"); err != nil {
+		t.Fatal(err)
+	}
+	if len(e.seen) != 2 || e.seen[0] != "/api/v1/biomarkers?limit=2&biomarker_kind=gene&n.gt=2" || e.seen[1] != "/api/v1/biomarkers?cursor=c1&limit=2&biomarker_kind=gene&n.gt=2" {
+		t.Fatalf("requests: %v", e.seen)
+	}
+	n := len(e.seen)
+	if _, _, err := e.split("biomarkers", "list", "--filter", "limit=5"); apierr.ExitCode(err) != apierr.ExitUsage || len(e.seen) != n {
+		t.Fatalf("a reserved key must be refused locally: %v", err)
+	}
+}
+
+// recordBody is GET /api/v1/{object}/{id} in the published shape: the primary row, attribute rows
+// folded in by dataset, the datasets reachable from the record, and a redirect from a retired id.
+const recordBody = `{"object_type":"sites","id":"site-2",
+"record":{"site_id":"site-2","site_name":"General Hospital","n_trials":4,"city":null},
+"attributes":{"site_hospitals":{"ccn":"123456","bed_count":300},"site_other":null},
+"datasets":[{"name":"site_trials","title":"Trials at the site","tier":"licensable","entitled":true,"row_count":null,"href":"/api/v1/sites/site-2/site_trials"},
+{"name":"site_investigators","title":"Investigators","tier":null,"entitled":false,"row_count":null,"href":"/api/v1/sites/site-2/site_investigators"}],
+"attribution":[{"name":"ClinicalTrials.gov via AACT, CTTI","license":"CC BY","href":"https://example.test/aact"}],
+"source_credit":"Source: ClinicalTrials.gov via AACT, CTTI (CC BY)",
+"build_state":{"built":true,"generation":"g7","last_loaded":null},"restriction":{"tier":"licensable"},
+"redirect":{"from":"site-1","to":"site-2"}}`
+
+func TestGetPrintsTheRecordThenTheDatasetsIndex(t *testing.T) {
+	e := loggedIn(t)
+	e.api = serve(recordBody)
+	out, errOut, err := e.split("sites", "get", "site-1")
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "field\tvalue\nSymbol\tEGFR\nAliases\t4\nEmpty\t\n\nsection\theading\tavailable\nrelations\tRelations\tyes\nassays\tAssays\tunavailable\n# Source: HGNC (CC0) https://example.test/hgnc\n"
+	want := "field\tvalue\nsite_id\tsite-2\nsite_name\tGeneral Hospital\nn_trials\t4\ncity\t\nsite_hospitals.ccn\t123456\nsite_hospitals.bed_count\t300\n" +
+		"\ndataset\ttitle\tentitled\nsite-trials\tTrials at the site\tyes\nsite-investigators\tInvestigators\tno\n# Source: ClinicalTrials.gov via AACT, CTTI (CC BY) https://example.test/aact\n"
 	if out != want {
-		t.Fatalf("%q want %q", out, want)
+		t.Fatalf("%q\nwant\n%q", out, want)
 	}
-	// last_loaded is null: the generation label is the as-of statement
-	for _, s := range []string{"HGNC (CC0)", "as of generation g7 (profile local)", "resolved: exact (accepted)", "https://example.test/biomarkers/EGFR"} {
+	for _, s := range []string{"ClinicalTrials.gov via AACT, CTTI (CC BY)", "redirected: site-1 is now site-2", "as of generation g7 (profile local)"} {
 		if !strings.Contains(errOut, s) {
 			t.Errorf("footer missing %q in %q", s, errOut)
 		}
 	}
-	csvOut, _, err := e.split("biomarkers", "get", "EGFR", "--csv")
-	if err != nil || csvOut != "key,value\nsymbol,EGFR\nn,4\nx,\n# Source: HGNC (CC0) https://example.test/hgnc\n" {
+	if strings.Contains(out+errOut, "licensable") {
+		t.Fatal("a tier was printed")
+	}
+	if e.lastSeen(t) != "/api/v1/sites/site-1" {
+		t.Fatal(e.lastSeen(t))
+	}
+	_, quietErr, _ := e.split("sites", "get", "site-1", "--quiet")
+	if !strings.Contains(quietErr, "redirected: site-1 is now site-2") || strings.Contains(quietErr, "as of") {
+		t.Fatalf("the redirect survives --quiet, the as-of does not: %q", quietErr)
+	}
+	csvOut, _, err := e.split("sites", "get", "site-1", "--csv")
+	if err != nil || !strings.HasPrefix(csvOut, "key,value\nsite_id,site-2\nsite_name,General Hospital\nn_trials,4\ncity,\nsite_hospitals.ccn,123456\nsite_hospitals.bed_count,300\n# Source: ") {
 		t.Fatalf("%v %q", err, csvOut)
+	}
+}
+
+func TestDatasetsCatalogListAndEntry(t *testing.T) {
+	e := loggedIn(t)
+	e.api = serve(`{"datasets":[{"name":"sites","title":"Sites","description":"d","grain":"one row per site","tier":"licensable","column_count":19,"object_types":["sites"],"source_credit":"Source: x"}]}`)
+	out, errOut, err := e.split("datasets", "list")
+	if err != nil || out != "name\ttitle\tgrain\tobject_types\tcolumn_count\nsites\tSites\tone row per site\t[\"sites\"]\t19\n" || strings.Contains(errOut, "licensable") {
+		t.Fatalf("%v %q %q", err, out, errOut)
+	}
+	if e.lastSeen(t) != "/api/v1/datasets" {
+		t.Fatal(e.lastSeen(t))
+	}
+	e.api = serve(`{"name":"site_trials","title":"Trials at a site","description":"One row per site and trial.","grain":"one row per site and trial","tier":"licensable",` +
+		`"columns":[{"name":"site_id","type":"text","unit":null,"description":"The site.","tier":"licensable"},{"name":"enrollment","type":"integer","unit":"participants","description":"Enrollment."}],` +
+		`"attribution":[{"name":"AACT","license":"CC BY","href":"h"}]}`)
+	out, errOut, err = e.split("datasets", "get", "site_trials")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "field\tvalue\nname\tsite_trials\ntitle\tTrials at a site\ndescription\tOne row per site and trial.\ngrain\tone row per site and trial\n\n" +
+		"column\ttype\tunit\tdescription\nsite_id\ttext\t\tThe site.\nenrollment\tinteger\tparticipants\tEnrollment.\n# Source: AACT (CC BY) h\n"
+	if out != want || strings.Contains(out+errOut, "licensable") {
+		t.Fatalf("%q\nwant\n%q", out, want)
+	}
+	if e.lastSeen(t) != "/api/v1/datasets/site_trials" {
+		t.Fatal(e.lastSeen(t))
+	}
+}
+
+func TestDatasetSubcommandsTakeKebabOrAPINames(t *testing.T) {
+	e := loggedIn(t)
+	e.api = serve(page1("", "2"))
+	for _, args := range [][]string{
+		{"companies", "get", "c 1", "sponsor-trials", "--scope", "group", "--filter", "phase=PHASE3"},
+		{"companies", "get", "c 1", "sponsor_trials", "--scope", "group", "--filter", "phase=PHASE3"},
+	} {
+		if _, _, err := e.split(args...); err != nil {
+			t.Fatalf("%v: %v", args, err)
+		}
+	}
+	if len(e.seen) != 2 || e.seen[0] != "/api/v1/companies/c%201/sponsor_trials?scope=group&phase=PHASE3" || e.seen[1] != e.seen[0] {
+		t.Fatalf("requests: %v", e.seen)
+	}
+	// legal entities have a single scope, so the document gives their datasets no --scope.
+	if _, _, err := e.split("legal-entities", "get", "le1", "sponsor-trials", "--scope", "group"); apierr.ExitCode(err) != apierr.ExitUsage || len(e.seen) != 2 {
+		t.Fatalf("%v %v", err, e.seen)
+	}
+	if _, _, err := e.split("cell-lines", "list"); err != nil || e.lastSeen(t) != "/api/v1/cell_lines" {
+		t.Fatalf("%v %s", err, e.lastSeen(t))
 	}
 }
 
@@ -404,7 +511,7 @@ func TestANonEnvelopeBodyIsNotRenderedAsATable(t *testing.T) {
 
 func TestCursorAndLimitPassThrough(t *testing.T) {
 	e := loggedIn(t)
-	e.api = serve(page1("", "2", "exact"))
+	e.api = serve(page1("", "2"))
 	if _, _, err := e.split("biomarkers", "list", "--limit", "2", "--cursor", "abc"); err != nil {
 		t.Fatal(err)
 	}
@@ -416,7 +523,7 @@ func TestCursorAndLimitPassThrough(t *testing.T) {
 
 func TestCSVCreditsFollowTheRows(t *testing.T) {
 	e := loggedIn(t)
-	e.api = serve(page1("", "2", "exact"))
+	e.api = serve(page1("", "2"))
 	out, _, err := e.split("biomarkers", "list", "--csv", "--quiet", "--no-footer")
 	if err != nil {
 		t.Fatal(err)
@@ -431,7 +538,7 @@ func TestAllStopsWhenACursorRepeats(t *testing.T) {
 	calls := 0
 	e.api = func(w http.ResponseWriter, r *http.Request) {
 		calls++
-		serve(page1("c1", "99", "exact"))(w, r)
+		serve(page1("c1", "99"))(w, r)
 	}
 	out, errOut, err := e.split("biomarkers", "list", "--all")
 	if apierr.ExitCode(err) != apierr.ExitPartial {
@@ -456,7 +563,7 @@ func TestAllStopsAtThePageCeiling(t *testing.T) {
 	calls := 0
 	e.api = func(w http.ResponseWriter, r *http.Request) {
 		calls++
-		serve(page1(fmt.Sprintf("c%d", calls), "99", "exact"))(w, r)
+		serve(page1(fmt.Sprintf("c%d", calls), "99"))(w, r)
 	}
 	_, errOut, err := e.split("biomarkers", "list", "--all")
 	if apierr.ExitCode(err) != apierr.ExitPartial {
@@ -472,7 +579,7 @@ func TestAllStopsAtThePageCeiling(t *testing.T) {
 
 func TestAllRepeatedCursorWithEscapesLeavesStderrClean(t *testing.T) {
 	e := loggedIn(t)
-	e.api = serve(page1(`c\u001b[2J\u0007`, "99", "exact"))
+	e.api = serve(page1(`c\u001b[2J\u0007`, "99"))
 	_, errOut, err := e.split("biomarkers", "list", "--all")
 	if apierr.ExitCode(err) != apierr.ExitPartial || !strings.Contains(err.Error(), "already fetched (c)") {
 		t.Fatalf("exit %d err %q", apierr.ExitCode(err), err)

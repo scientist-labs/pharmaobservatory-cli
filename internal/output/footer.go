@@ -53,6 +53,14 @@ func WriteFooter(w io.Writer, e *Envelope, o FooterOpts) {
 		_, _ = fmt.Fprintln(w, l)
 	}
 	say := func(s string) { _, _ = fmt.Fprintln(w, sanitize.Line(s)) }
+	// What the table stands for and leaves out prints even under --quiet, like the credit: the id
+	// the server answered for instead of the one asked, and the columns withheld (never the tiers).
+	if r := e.Redirect; r != nil {
+		say("redirected: " + r.From + " is now " + r.To)
+	}
+	if len(e.WithheldColumns) > 0 {
+		say("withheld columns: " + strings.Join(e.WithheldColumns, ", "))
+	}
 	if o.Quiet {
 		return
 	}
