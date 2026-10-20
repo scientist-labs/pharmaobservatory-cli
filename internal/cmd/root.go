@@ -13,6 +13,11 @@ func NewRoot() *cobra.Command { return NewRootWith(defaultDeps()) }
 
 // NewRootWith builds the root command over explicit dependencies (tests).
 func NewRootWith(d Deps) *cobra.Command {
+	root, _ := newRoot(d)
+	return root
+}
+
+func newRoot(d Deps) (*cobra.Command, *globals) {
 	g := &globals{}
 	root := &cobra.Command{
 		Use:           apierr.Bin,
@@ -39,5 +44,5 @@ func NewRootWith(d Deps) *cobra.Command {
 	root.PersistentFlags().BoolVar(&g.noFooter, "no-footer", false, "same as --quiet; the source credit is always printed")
 	root.AddCommand(newVersionCmd(), newLoginCmd(g, d), newLogoutCmd(g, d), newWhoamiCmd(g, d), newAuthCmd(g, d), newAPICmd(g, d), newQueryCmd(g, d), newExitCodesCmd())
 	root.AddCommand(pages.Build(pageEnv(g, d))...)
-	return root
+	return root, g
 }

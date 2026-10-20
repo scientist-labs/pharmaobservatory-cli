@@ -25,6 +25,7 @@ var ExitTable = []ExitClassRow{
 	{ExitUnavail, "unavailable", "503 no_identity_provider, any other 5xx, a network failure, 409 generation_changed or GENERATION_CHANGED, TIMEOUT, QUERY_FAILED"},
 	{ExitNotAnswered, "not answered", "a 200 whose body says unbuilt or not_applicable"},
 	{ExitPartial, "partial", "--all printed some pages and then stopped"},
+	{ExitRemoved, "removed", "a generated dataset or object command got a 404 for its route (not for a missing record): the server no longer has it, so upgrade the CLI"},
 }
 
 // TableText renders ExitTable for a terminal.
