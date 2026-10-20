@@ -52,6 +52,58 @@ prune() {
   done
 }
 
+# write_index <site-dir> <host> <version>: the landing page at the Pages root, so the bare host is not a 404.
+# Rewritten on every run (the site is rebuilt in place). Static, no scripts or external assets.
+write_index() {
+  local site=$1 host=$2 ver=$3 vline=""
+  [ -n "$ver" ] && vline="<p>Current version: <strong>$ver</strong>.</p>"
+  cat > "$site/index.html" <<HTML
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pharma Observatory packages</title>
+<style>
+:root{color-scheme:light dark;--bg:#fff;--fg:#1a1a1a;--muted:#555;--code:#f3f4f6;--link:#0b5fd3}
+@media (prefers-color-scheme:dark){:root{--bg:#111418;--fg:#e8eaed;--muted:#a0a4ab;--code:#1d222a;--link:#7ab0ff}}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.55 system-ui,sans-serif}
+main{max-width:46rem;margin:0 auto;padding:2rem 1rem}
+a{color:var(--link)}
+pre{background:var(--code);padding:.75rem 1rem;overflow-x:auto;border-radius:6px;font-size:.875rem}
+code{font-family:ui-monospace,monospace}
+.muted{color:var(--muted)}
+</style>
+</head>
+<body>
+<main>
+<h1>Pharma Observatory packages</h1>
+<p>Signed apt and dnf/yum repositories for the <code>pharma</code> command line tool.</p>
+$vline
+<h2>Debian and Ubuntu (apt)</h2>
+<pre><code>sudo install -d /usr/share/keyrings
+curl -fsSL https://$host/pharmaobservatory.gpg \\
+  | sudo tee /usr/share/keyrings/pharmaobservatory-archive-keyring.gpg &gt;/dev/null
+echo "deb [signed-by=/usr/share/keyrings/pharmaobservatory-archive-keyring.gpg] https://$host/apt stable main" \\
+  | sudo tee /etc/apt/sources.list.d/pharmaobservatory.list
+sudo apt-get update &amp;&amp; sudo apt-get install pharma</code></pre>
+<h2>Fedora, RHEL and derivatives (dnf or yum)</h2>
+<pre><code>sudo curl -fsSL -o /etc/yum.repos.d/pharmaobservatory.repo https://$host/rpm/pharmaobservatory.repo
+sudo dnf install pharma</code></pre>
+<p class="muted">The repository metadata is signed; the individual packages are not.</p>
+<h2>Signing key</h2>
+<ul>
+<li><a href="pharmaobservatory.asc">pharmaobservatory.asc</a> (armored)</li>
+<li><a href="pharmaobservatory.gpg">pharmaobservatory.gpg</a> (binary keyring)</li>
+</ul>
+<h2>Other ways to install</h2>
+<p>Homebrew and direct downloads: <a href="https://pharmaobservatory.com/cli">pharmaobservatory.com/cli</a>.</p>
+</main>
+</body>
+</html>
+HTML
+}
+
 # ---- apt: apt/pool/main + apt/dists/stable ----
 apt="$site/apt"
 mkdir -p "$apt/pool/main"
@@ -99,4 +151,6 @@ cp "$here/pharmaobservatory-archive-keyring.gpg" "$site/pharmaobservatory.gpg"
 cp "$here/pharmaobservatory-archive-keyring.asc" "$site/pharmaobservatory.asc"
 printf '%s\n' "$host" > "$site/CNAME"
 : > "$site/.nojekyll"
+ver=$(printf '%s\n' "${debs[@]##*/}" | sed -E 's/^pharma_(.+)_linux_(amd64|arm64)\.deb$/\1/' | sort -V | tail -n 1)
+write_index "$site" "$host" "$ver"
 echo "built apt and yum repositories under $site (signing key $fpr)"

@@ -57,7 +57,7 @@ Every archive also has its own `<archive>.sigstore.json` bundle, verified the sa
 `packaging/build-repos.sh <dist> <site>` builds both from a release's deb and rpm, signs the metadata
 with the key in `PACKAGES_GPG_PRIVATE_KEY`, keeps the newest 5 versions per architecture, and writes the
 public key (`/pharmaobservatory.gpg` binary, `/pharmaobservatory.asc` armored), `CNAME`
-(`packages.pharmaobservatory.com`) and `.nojekyll`. It writes only under `<site>`. The workflow's
+(`packages.pharmaobservatory.com`), `.nojekyll` and a static landing page `index.html` (rewritten every run, so the bare host is not a 404). It writes only under `<site>`. The workflow's
 `packages` job pushes `<site>` to `scientist-labs/pharmaobservatory-packages` with `PACKAGES_DEPLOY_KEY`.
 
 ## The signing key
