@@ -17,8 +17,8 @@ github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZb
 github.com/pmezard/go-difflib v1.0.0/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=
 github.com/russross/blackfriday/v2 v2.1.0 h1:JIOH55/0cWyOuilr9/qlrm0BSXldqnqwMsf35Ld67mk=
 github.com/russross/blackfriday/v2 v2.1.0/go.mod h1:+Rmxgy9KzJVeS9/2gXHxylqXiyQDYRxCVz55jmeOWTM=
-github.com/scientist-labs/pharmaobservatory-sdks/go v0.1.4 h1:j0aUHidTffw4/myUlXGaG5L3nZ559DvbyuBROXClRIE=
-github.com/scientist-labs/pharmaobservatory-sdks/go v0.1.4/go.mod h1:zHj6wU9EGepoTLuJGx3YMeRDglwD1zS9CysSYDyM0bQ=
+github.com/scientist-labs/pharmaobservatory-sdks/go v0.1.5 h1:sxC5ScBCrB7KCMaNHMMDZ47tUpjUbBlgKiZ5UgiF+sA=
+github.com/scientist-labs/pharmaobservatory-sdks/go v0.1.5/go.mod h1:zHj6wU9EGepoTLuJGx3YMeRDglwD1zS9CysSYDyM0bQ=
 github.com/spf13/cobra v1.10.2 h1:DMTTonx5m65Ic0GOoRY2c16WCbHxOOw6xxezuLaBpcU=
 github.com/spf13/cobra v1.10.2/go.mod h1:7C1pvHqHw5A4vrJfjNwvOdzYu0Gml16OCs2GRiTUUS4=
 github.com/spf13/pflag v1.0.9 h1:9exaQaMOCwffKiiiYk6/BndUBv+iRViNW+4lEMi0PvY=
