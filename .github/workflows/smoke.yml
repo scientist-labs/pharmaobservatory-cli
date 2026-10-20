@@ -28,7 +28,8 @@
 # credential. Absent, the job skips everything with one message and opens no failure issue.
 #
 # ENVIRONMENT ABSENT. The candidate is not permanent. A DNS or connection failure, or a 503 that is
-# not the application's own error, ends the run as a notice plus a summary naming the cause, and the
+# not the application's own error, or a bare gateway 404 (no JSON error body, which is what a host
+# with no deployment answers on every path), ends the run as a notice plus a summary naming the cause, and the
 # job is green. A 5xx from a reachable application fails the job.
 #
 # ONE ISSUE. A failing run opens or updates a single issue labelled smoke-test; it never opens a

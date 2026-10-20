@@ -255,3 +255,26 @@ func TestUpgradeHow(t *testing.T) {
 		}
 	}
 }
+
+func TestCorruptCacheIsTreatedAsAbsentAndReplaced(t *testing.T) {
+	f := newFixture(t)
+	if err := os.MkdirAll(f.dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	p := filepath.Join(f.dir, cacheFile)
+	if err := os.WriteFile(p, []byte(`{"checked_at":"2026-10-18T12:0`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	settle(f.notifier("0.1.1", true))
+	if f.hits.Load() != 1 || !strings.Contains(f.out.String(), "0.1.1 -> 0.1.4") {
+		t.Fatalf("corrupt cache not treated as absent: hits %d out %q", f.hits.Load(), f.out.String())
+	}
+	// The rewrite is whole, and no temp file is left behind.
+	if _, ok := f.notifier("0.1.1", true).readCache(); !ok {
+		t.Fatal("cache not rewritten as valid JSON")
+	}
+	ents, _ := os.ReadDir(f.dir)
+	if len(ents) != 1 {
+		t.Fatalf("expected only the cache file, found %d entries", len(ents))
+	}
+}
