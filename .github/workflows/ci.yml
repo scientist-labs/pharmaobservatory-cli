@@ -65,6 +65,23 @@ jobs:
           distribution: goreleaser
           version: v2.18.3
           args: release --snapshot --clean --skip=sign
+      - name: package contents (archive, deb, rpm, formula)
+        run: |
+          tar tzf dist/pharma_*_linux_amd64.tar.gz | grep -e manpages/ -e completions/
+          docker run --rm -v "$PWD/dist:/d:ro" debian:stable-slim sh -c 'dpkg -c /d/pharma_*_linux_amd64.deb | grep -e /usr/share/man/man1/pharma.1.gz -e bash-completion -e zsh -e fish'
+          docker run --rm -v "$PWD/dist:/d:ro" fedora:latest sh -c 'rpm -qlp /d/pharma_*_linux_amd64.rpm'
+          sed -n '/define_method(:install)/,/^      end/p' dist/homebrew/pharma.rb | head -8
+      - name: installed .deb has a man page and bash completion
+        # The slim image's dpkg config excludes /usr/share/man; remove that so the page is installed.
+        run: |
+          docker run --rm -v "$PWD/dist:/d:ro" debian:stable-slim sh -c '
+            set -e
+            rm -f /etc/dpkg/dpkg.cfg.d/docker
+            apt-get update -qq
+            apt-get install -y -qq man-db bash-completion >/dev/null
+            dpkg -i /d/pharma_*_linux_amd64.deb
+            man -w pharma
+            bash -c "source /usr/share/bash-completion/completions/pharma && complete -p pharma"'
       - uses: actions/upload-artifact@v4
         with:
           name: snapshot-dist
