@@ -52,10 +52,22 @@ prune() {
   done
 }
 
+# html_escape <string>: escape & < > " so a value cannot inject markup into the page.
+html_escape() {
+  local s=$1
+  s=${s//&/&amp;}
+  s=${s//</&lt;}
+  s=${s//>/&gt;}
+  s=${s//\"/&quot;}
+  printf '%s' "$s"
+}
+
 # write_index <site-dir> <host> <version>: the landing page at the Pages root, so the bare host is not a 404.
 # Rewritten on every run (the site is rebuilt in place). Static, no scripts or external assets.
 write_index() {
-  local site=$1 host=$2 ver=$3 vline=""
+  local site=$1 host ver vline=""
+  host=$(html_escape "$2")
+  ver=$(html_escape "$3")
   [ -n "$ver" ] && vline="<p>Current version: <strong>$ver</strong>.</p>"
   cat > "$site/index.html" <<HTML
 <!doctype html>
