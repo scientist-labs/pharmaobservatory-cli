@@ -13,6 +13,7 @@ import (
 
 	"github.com/scientist-labs/pharmaobservatory-cli/internal/apierr"
 	"github.com/scientist-labs/pharmaobservatory-cli/internal/cmd/pages"
+	"github.com/scientist-labs/pharmaobservatory-cli/internal/update"
 )
 
 func userAgent() string {
@@ -33,6 +34,9 @@ func pageEnv(g *globals, d Deps) *pages.Env {
 			return pages.Settings{JSON: g.json, CSV: g.csv, All: g.all, Quiet: g.quiet || g.noFooter}
 		},
 		Width: terminalWidth,
+		Upgrade: func() string {
+			return update.UpgradeHow(d.exe())
+		},
 	}
 }
 

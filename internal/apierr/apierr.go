@@ -34,6 +34,7 @@ const (
 	ExitUnavail     = 7
 	ExitNotAnswered = 8
 	ExitPartial     = 9
+	ExitRemoved     = 10
 )
 
 // ClassError carries an explicit exit class and a message that names the remedy.
@@ -273,6 +274,31 @@ func FromResponse(status int, h http.Header, raw []byte, profile string) error {
 		text = string(r[:300])
 	}
 	return fmt.Errorf("unexpected response: HTTP %d %s", status, text)
+}
+
+// Removed builds a class-10 error: the route a generated command calls is gone from the server.
+func Removed(format string, a ...any) error {
+	return &ClassError{Class: ExitRemoved, Msg: fmt.Sprintf(format, a...)}
+}
+
+// RouteMissing reports whether a 404 is the server saying THE ROUTE does not exist, as opposed to a
+// record or page it looked up and did not find. The server answers a missing record or dataset with a
+// JSON body carrying an `error` word (not_found, unknown_page, unknown_section) or an `error_code`
+// (UNKNOWN_RECORD, UNKNOWN_DATASET). A path no route matches never reaches a controller: Rails answers
+// it from its exceptions app with the generic {"status":404,"error":"Not Found"} (or an HTML or markdown
+// page, or nothing). So a 404 that names no word or code of the server's own is a missing route.
+func RouteMissing(status int, raw []byte) bool {
+	if status != http.StatusNotFound {
+		return false
+	}
+	var b body
+	if json.Unmarshal(raw, &b) == nil && (b.ErrorCode != "" || b.Message != "") {
+		return false
+	}
+	if _, known := refusals[b.Error]; known {
+		return false
+	}
+	return true
 }
 
 // retryAfter reads Retry-After as whole seconds (the form the server sends).

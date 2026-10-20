@@ -68,6 +68,7 @@ func jwtFor(aud string, sub string, n int) string {
 // env is a fake origin: discovery, token endpoint and /api/v1/whoami on one server.
 type env struct {
 	t       *testing.T
+	exe     string // the binary path the upgrade hint reads
 	srv     *httptest.Server
 	kr      *fakeKR
 	clock   time.Time
@@ -90,7 +91,7 @@ type env struct {
 }
 
 func newEnv(t *testing.T) *env {
-	e := &env{t: t, kr: &fakeKR{m: map[string]string{}}, clock: time.Date(2026, 10, 18, 12, 0, 0, 0, time.UTC)}
+	e := &env{exe: "/usr/local/bin/pharma", t: t, kr: &fakeKR{m: map[string]string{}}, clock: time.Date(2026, 10, 18, 12, 0, 0, 0, time.UTC)}
 	t.Setenv("PHARMA_CONFIG_DIR", filepath.Join(t.TempDir(), "pharma"))
 	t.Setenv("PHARMA_CREDENTIAL_STORE", "")
 	t.Setenv("PHARMA_PROFILE", "")
@@ -151,6 +152,7 @@ func (e *env) run(args ...string) (string, error) {
 		CallbackWait: 5 * time.Second,
 		Sleep:        func(_ context.Context, d time.Duration) error { e.sleeps = append(e.sleeps, d); return nil },
 		Stderr:       &e.notice,
+		Exe:          e.exe,
 		OpenBrowser: func(u string) error {
 			if e.opener != nil {
 				return e.opener(u)

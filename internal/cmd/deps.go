@@ -13,6 +13,7 @@ import (
 	"github.com/scientist-labs/pharmaobservatory-cli/internal/apierr"
 	"github.com/scientist-labs/pharmaobservatory-cli/internal/auth/store"
 	"github.com/scientist-labs/pharmaobservatory-cli/internal/config"
+	"github.com/scientist-labs/pharmaobservatory-cli/internal/update"
 )
 
 // Deps are the seams tests replace: HTTP, keychain, browser, stdin, clock, callback timeout.
@@ -27,6 +28,18 @@ type Deps struct {
 	// Sleep and Stderr are the --wait seams: nil means a real sleep and os.Stderr.
 	Sleep  func(ctx context.Context, d time.Duration) error
 	Stderr io.Writer
+	// Update is the new-release notifier's seam; nil means the real one (see notice.go).
+	Update *update.Notifier
+	// Exe is the running binary's path for the upgrade hint; empty means os.Executable.
+	Exe string
+}
+
+func (d Deps) exe() string {
+	if d.Exe != "" {
+		return d.Exe
+	}
+	p, _ := os.Executable()
+	return p
 }
 
 func defaultDeps() Deps {

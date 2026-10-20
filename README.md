@@ -216,11 +216,36 @@ Scripts can branch on the exit code. `pharma exit-codes` prints this table (`--m
 | 7 | unavailable | 503 no_identity_provider, any other 5xx, a network failure, 409 generation_changed or GENERATION_CHANGED, TIMEOUT, QUERY_FAILED |
 | 8 | not answered | a 200 whose body says unbuilt or not_applicable |
 | 9 | partial | --all printed some pages and then stopped |
+| 10 | removed | a generated dataset or object command got a 404 for its route (not for a missing record): the server no longer has it, so upgrade the CLI |
 
 ## Updates
 
 New API endpoints arrive automatically: the commands are generated from the SDK's API document, which
 is regenerated daily.
+
+### New-release notice
+
+At most once every 24 hours, after a command finishes, `pharma` checks the latest GitHub release in the
+background (3 second timeout, it never delays a command) and caches the answer in
+`update-check.json` in the config directory (`~/.config/pharma`). When a newer release exists it prints
+one line to stderr, for example:
+
+```
+A new release of pharma is available: 0.1.1 -> 0.1.4 (upgrade with: brew upgrade scientist-labs/pharmaobservatory/pharma)
+```
+
+The upgrade hint is the brew command when the binary lives under a Homebrew prefix, else
+<https://pharmaobservatory.com/cli>. The notice never appears when stderr is not a terminal, when `CI`
+is set, with `--json` or `--csv`, or on a development or snapshot build, and a network failure is
+silent. Set `PHARMA_NO_UPDATE_NOTIFIER` (to any value) to turn it off.
+
+### A command the server no longer has
+
+The dataset and object commands are generated from the SDK this release was built with. If the API has
+since removed one, the server answers its route with a plain 404. The command then exits 10 and says the
+command may no longer exist and how to upgrade. A 404 for a record or dataset the server looked up and did
+not find (`not_found`, `UNKNOWN_RECORD`, `unknown_page`, `unknown_section`) still exits 5 with the server's
+message.
 
 ## More
 

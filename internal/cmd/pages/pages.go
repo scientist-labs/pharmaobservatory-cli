@@ -62,6 +62,8 @@ type Env struct {
 	Settings func() Settings
 	// Width returns the terminal width when w is a terminal, else 0 (tab-separated output).
 	Width func(w io.Writer) int
+	// Upgrade is how to upgrade this binary (a short phrase); nil leaves the hint without one.
+	Upgrade func() string
 }
 
 // Settings are the global output flags. Quiet drops the footer's as-of, URL and paging lines;
@@ -369,6 +371,15 @@ func (e *Env) run(cmd *cobra.Command, o *Op, id string, fs *pflag.FlagSet) error
 	return w.render()
 }
 
+// removed is the exit-10 error for a generated command whose route the server no longer has.
+func (e *Env) removed(path string) error {
+	msg := fmt.Sprintf("the server has no route for GET %s (HTTP 404), so this command may no longer exist; this %s may be out of date", path, apierr.Bin)
+	if e.Upgrade != nil {
+		msg += ", " + e.Upgrade()
+	}
+	return apierr.Removed("%s", msg)
+}
+
 // MaxPages is the ceiling on pages one --all walk fetches. A walk that reaches it stops, marks
 // the output partial and exits 9. It is a variable so the tests can lower it.
 var MaxPages = 1000
@@ -413,6 +424,9 @@ func (w *walker) fetch() ([]byte, error) {
 	}
 	if resp.StatusCode != http.StatusOK {
 		err := apierr.FromResponse(resp.StatusCode, resp.Header, body, w.cl.Profile)
+		if apierr.RouteMissing(resp.StatusCode, body) {
+			err = w.e.removed(w.o.Path)
+		}
 		if resp.StatusCode == http.StatusConflict {
 			var b struct {
 				Error     string `json:"error"`
