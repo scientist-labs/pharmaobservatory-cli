@@ -47,6 +47,26 @@ cosign verify-blob \
 sha256sum --check --ignore-missing checksums.txt
 ```
 
+### Man pages and shell completion
+
+Homebrew, apt and dnf install the man pages (`man pharma`, `man pharma-login`) and the bash, zsh and
+fish completions for you. If you installed the release archive, it carries `manpages/` and
+`completions/`; the executable can also print a completion script itself (`pharma completion --help`).
+
+```sh
+# man pages
+sudo install -m 0644 manpages/*.1.gz /usr/local/share/man/man1/
+
+# bash (needs the bash-completion package)
+pharma completion bash | sudo tee /etc/bash_completion.d/pharma >/dev/null
+
+# zsh: put the script on your fpath, then restart the shell
+pharma completion zsh > "${fpath[1]}/_pharma"
+
+# fish
+pharma completion fish > ~/.config/fish/completions/pharma.fish
+```
+
 ## Sign in
 
 ```sh

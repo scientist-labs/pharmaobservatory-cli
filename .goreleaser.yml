@@ -14,6 +14,8 @@ env:
 before:
   hooks:
     - go mod tidy
+    # Man pages and completions come from the live command tree; the output is gitignored.
+    - go run ./cmd/gendocs .
 
 builds:
   - id: cli
@@ -45,6 +47,12 @@ archives:
     files:
       - LICENSE
       - README.md
+      - src: manpages/*.1.gz
+        dst: manpages
+        strip_parent: true
+      - src: completions/*
+        dst: completions
+        strip_parent: true
 
 checksum:
   name_template: checksums.txt
@@ -96,6 +104,14 @@ nfpms:
       - src: packaging/pharmaobservatory-archive-keyring.asc
         dst: /etc/pki/rpm-gpg/RPM-GPG-KEY-pharmaobservatory
         packager: rpm
+      - src: manpages/*.1.gz
+        dst: /usr/share/man/man1/
+      - src: completions/pharma.bash
+        dst: /usr/share/bash-completion/completions/pharma
+      - src: completions/_pharma
+        dst: /usr/share/zsh/vendor-completions/_pharma
+      - src: completions/pharma.fish
+        dst: /usr/share/fish/vendor_completions.d/pharma.fish
 
 # Homebrew FORMULA named pharma, pushed to the tap over SSH with the TAP_DEPLOY_KEY deploy
 # key. `brews` is soft-deprecated since GoReleaser v2.10 in favour of `homebrew_casks`, kept on
@@ -122,6 +138,12 @@ brews:
     commit_author:
       name: pharmaobservatory-release
       email: noreply@github.com
+    install: |
+      bin.install "{{ .Env.BINARY_NAME }}"
+      man1.install Dir["manpages/*.1.gz"]
+      bash_completion.install "completions/pharma.bash" => "pharma"
+      zsh_completion.install "completions/_pharma"
+      fish_completion.install "completions/pharma.fish"
     test: |
       system "#{bin}/{{ .Env.BINARY_NAME }}", "version"
 
