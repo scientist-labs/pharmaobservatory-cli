@@ -151,7 +151,18 @@ func (n *Notifier) writeCache(c cache) {
 	if err != nil {
 		return
 	}
-	_ = os.WriteFile(p, b, 0o600)
+	// Write to a temp file in the same directory, then rename over the target, so two concurrent
+	// invocations can never leave a truncated cache. Any failure is silent.
+	f, err := os.CreateTemp(filepath.Dir(p), cacheFile+".*.tmp")
+	if err != nil {
+		return
+	}
+	tmp := f.Name()
+	_, werr := f.Write(b)
+	cerr := f.Close()
+	if werr != nil || cerr != nil || os.Chmod(tmp, 0o600) != nil || os.Rename(tmp, p) != nil {
+		_ = os.Remove(tmp)
+	}
 }
 
 // Start begins the check and returns at once. A fresh cache answers immediately without the network;

@@ -15,7 +15,7 @@
 #   ok      every check passed (exit 0)
 #   absent  the environment is not there: DNS or connection failure, or a 503 that is not the
 #           application's own error (a 503 `no_identity_provider`, or an ingress 503 with no
-#           application body). Exit 0 and a message naming the cause. A 5xx from a reachable
+#           application body), or a bare gateway 404 with no application body. Exit 0 and a message naming the cause. A 5xx from a reachable
 #           application is a FAILURE, never absent.
 #   failed  a check failed (exit 1); $SMOKE_OUT/failure.md names the command and the server body.
 #
@@ -78,6 +78,12 @@ probe_origin() {
     else
       echo "up"
     fi
+    return
+  fi
+  if [ "$code" = 404 ] && ! jq -e 'type == "object" and has("error")' "$body" >/dev/null 2>&1; then
+    # The gateway answers every path of a host with no deployment with a bare 404 (measured on the
+    # candidate, issue #9). A 404 from the application carries a JSON error body.
+    echo "absent: HTTP 404 from the gateway with no application body"
     return
   fi
   echo "up"
