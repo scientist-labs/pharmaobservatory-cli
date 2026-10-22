@@ -193,7 +193,8 @@ func CodeFromQuery(q url.Values, state string) (string, error) {
 	return q.Get("code"), nil
 }
 
-// ParsePasted accepts the full callback URL (state is checked) or a bare code.
+// ParsePasted accepts the callback URL, with or without its scheme, or its query string (state is
+// checked in each case), or a bare code.
 func ParsePasted(pasted, state string) (string, error) {
 	pasted = strings.TrimSpace(pasted)
 	if pasted == "" {
@@ -205,6 +206,22 @@ func ParsePasted(pasted, state string) (string, error) {
 			return "", apierr.Usage(fmt.Errorf("cannot parse the pasted URL: %w", err))
 		}
 		return CodeFromQuery(u.Query(), state)
+	}
+	// A URL copied from the address bar often lacks its scheme ("127.0.0.1:53682/callback?code=...").
+	// A bare code never contains '?' or '=', so anything that does is read as a query string.
+	if strings.ContainsAny(pasted, "?=") {
+		raw := pasted
+		if i := strings.IndexByte(raw, '?'); i >= 0 {
+			raw = raw[i+1:]
+		}
+		if i := strings.IndexByte(raw, '#'); i >= 0 {
+			raw = raw[:i]
+		}
+		q, err := url.ParseQuery(raw)
+		if err != nil {
+			return "", apierr.Usage(fmt.Errorf("cannot parse the pasted URL: %w", err))
+		}
+		return CodeFromQuery(q, state)
 	}
 	return pasted, nil
 }
