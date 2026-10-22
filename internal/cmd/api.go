@@ -16,6 +16,9 @@ import (
 	"github.com/scientist-labs/pharmaobservatory-cli/internal/update"
 )
 
+// userAgent is the User-Agent of every HTTP request the CLI makes: `pharma/<version>` (the same
+// version `pharma version` prints), a space, then the platform. The server's CLI-traffic regex
+// keys on the leading `pharma/<version>` followed by whitespace or the end.
 func userAgent() string {
 	return fmt.Sprintf("%s/%s (%s/%s)", apierr.Bin, version, runtime.GOOS, runtime.GOARCH)
 }
@@ -28,7 +31,7 @@ func pageEnv(g *globals, d Deps) *pages.Env {
 			if err != nil {
 				return nil, err
 			}
-			return &pages.Client{SDK: s.SDK(userAgent()), Profile: s.Profile.Name}, nil
+			return &pages.Client{SDK: s.SDK(), Profile: s.Profile.Name}, nil
 		},
 		Settings: func() pages.Settings {
 			return pages.Settings{JSON: g.json, CSV: g.csv, All: g.all, Quiet: g.quiet || g.noFooter}

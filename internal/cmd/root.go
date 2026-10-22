@@ -18,6 +18,7 @@ func NewRootWith(d Deps) *cobra.Command {
 }
 
 func newRoot(d Deps) (*cobra.Command, *globals) {
+	d = d.withUserAgent()
 	g := &globals{}
 	root := &cobra.Command{
 		Use:           apierr.Bin,

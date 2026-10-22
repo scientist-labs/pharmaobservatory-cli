@@ -14,12 +14,12 @@ import (
 
 // SDK builds the typed SDK client for the session's profile. The bearer, the refresh and the
 // single retry on expired_token live in the transport, not in the SDK's own auth hooks, so the
-// SDK sees an ordinary http.Client.
-func (s *Session) SDK(userAgent string) *sdk.APIClient {
+// SDK sees an ordinary http.Client. The User-Agent is not set here: s.HC's transport sets it on
+// every request (WithUserAgent), raw Session calls included.
+func (s *Session) SDK() *sdk.APIClient {
 	cfg := sdk.NewConfiguration()
 	cfg.Servers = sdk.ServerConfigurations{{URL: s.Profile.Base()}}
 	cfg.OperationServers = nil
-	cfg.UserAgent = userAgent
 	cfg.HTTPClient = &http.Client{Transport: &bearerTransport{s: s}, Timeout: s.HC.Timeout, CheckRedirect: apierr.SecureRedirect}
 	return sdk.NewAPIClient(cfg)
 }
