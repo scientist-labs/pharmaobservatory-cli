@@ -42,6 +42,21 @@ func (d Deps) exe() string {
 	return p
 }
 
+// withUserAgent is the one place the CLI's User-Agent is attached: every HTTP client in d (the
+// API, discovery and token client, and the new-release check) gets a transport that sets
+// userAgent() on each request. Raw Session.Get/PostJSON, the generated SDK, login and refresh all
+// send through d.HC, and the release check through d.Update.HC.
+func (d Deps) withUserAgent() Deps {
+	ua := userAgent()
+	d.HC = api.WithUserAgent(d.HC, ua)
+	if d.Update != nil {
+		n := *d.Update
+		n.HC = api.WithUserAgent(n.HC, ua)
+		d.Update = &n
+	}
+	return d
+}
+
 func defaultDeps() Deps {
 	return Deps{
 		HC:           &http.Client{Timeout: 30 * time.Second, CheckRedirect: apierr.SecureRedirect},

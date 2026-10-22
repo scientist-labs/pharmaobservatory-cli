@@ -88,6 +88,7 @@ type env struct {
 	opener  func(authURL string) error
 	sleeps  []time.Duration // every --wait sleep, which the test seam does not actually perform
 	notice  bytes.Buffer    // the --wait notice
+	uas     []string        // the User-Agent of every request the fake origin saw
 }
 
 func newEnv(t *testing.T) *env {
@@ -141,7 +142,10 @@ func newEnv(t *testing.T) *env {
 		}
 		_, _ = w.Write([]byte(`{"ok":true}`))
 	})
-	e.srv = httptest.NewServer(mux)
+	e.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		e.uas = append(e.uas, r.Header.Get("User-Agent"))
+		mux.ServeHTTP(w, r)
+	}))
 	t.Cleanup(e.srv.Close)
 	return e
 }

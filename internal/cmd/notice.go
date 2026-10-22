@@ -31,6 +31,7 @@ func Execute(stderr *os.File) error {
 // notifier's own gates (TTY, CI, opt-out, dev builds) suppress it. args nil means os.Args; out nil
 // leaves cobra's stdout and stderr.
 func ExecuteWith(d Deps, args []string, out io.Writer) error {
+	d = d.withUserAgent()
 	root, g := newRoot(d)
 	if out != nil {
 		root.SetOut(out)
