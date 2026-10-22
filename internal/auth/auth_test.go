@@ -114,6 +114,27 @@ func TestParsePasted(t *testing.T) {
 	}
 }
 
+// A browser address bar hides the http:// scheme, so a user copying the failed redirect pastes
+// "127.0.0.1:53682/callback?code=...&state=...". That must yield the code, not the whole string.
+func TestParsePastedWithoutScheme(t *testing.T) {
+	for _, in := range []string{
+		"127.0.0.1:53682/callback?code=zzz&state=s1\n",
+		"localhost:53682/callback?code=zzz&state=s1",
+		"?code=zzz&state=s1",
+		"code=zzz&state=s1",
+	} {
+		if c, err := ParsePasted(in, "s1"); err != nil || c != "zzz" {
+			t.Fatalf("schemeless %q: got %q %v, want zzz", in, c, err)
+		}
+	}
+	if _, err := ParsePasted("127.0.0.1:53682/callback?code=zzz&state=bad", "s1"); err == nil {
+		t.Fatal("schemeless paste skipped the state check")
+	}
+	if _, err := ParsePasted("127.0.0.1:53682/callback?error=access_denied", "s1"); err == nil || !strings.Contains(err.Error(), "access_denied") {
+		t.Fatalf("schemeless callback error not surfaced: %v", err)
+	}
+}
+
 func TestLoopbackCallback(t *testing.T) {
 	ln, err := Listen(0)
 	if err != nil {
