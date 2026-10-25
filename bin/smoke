@@ -230,21 +230,17 @@ assert_attribution "$EVID_JSON" "$LAST_ERR" "csv footer"
 assert_attribution "$EVID_JSON" "$LAST_OUT" "csv source comments"
 
 # --- 6. a company dataset in the default table, on a dataset that carries licensed data ---------
-# pdufa_dates credits a licensed source (Benzinga); the companies list is sorted by activity, so the
-# first few companies are the likeliest to have rows.
-run 0 --wait companies list --limit 5 --json
-COMPANY_IDS="$(jq -r '.rows[].company_id' "$LAST_OUT")"
-FOUND=""
-LICENSED_JSON=""
-for cid in $COMPANY_IDS; do
-  run 0 --wait companies get "$cid" pdufa-dates --json
-  if jq -e '([.attribution[]? | select((.license // "") | test("icensed"))] | length) > 0 and (.rows | length) > 0' "$LAST_OUT" >/dev/null; then
-    LICENSED_JSON="$LAST_OUT"
-    FOUND="$cid"
-    break
-  fi
-done
-[ -n "$FOUND" ] || fail "$LAST_CMD" "none of the first 5 companies has pdufa_dates rows with a licensed credit"
+# pdufa_dates is a row-tier dataset: Benzinga calendar rows are licensable, SEC filing rows are open.
+# The five most active companies had no licensable rows on the candidate (run 40207425748,
+# 2026-10-25), so ask the dataset itself for the company with the most licensable rows.
+LICENSED_SQL="SELECT sponsor_company_id, count(*) AS n FROM pdufa_dates WHERE restriction_tier = 'licensable' AND sponsor_company_id IS NOT NULL GROUP BY sponsor_company_id ORDER BY n DESC LIMIT 1"
+run 0 --wait query "$LICENSED_SQL" --json
+FOUND="$(jq -r '.rows[0][0] // empty' "$LAST_OUT")"
+[ -n "$FOUND" ] || fail "$LAST_CMD" "pdufa_dates has no licensable row with a company visible to the test account"
+run 0 --wait companies get "$FOUND" pdufa-dates --json
+LICENSED_JSON="$LAST_OUT"
+jq -e '([.attribution[]? | select((.license // "") | test("icensed"))] | length) > 0 and (.rows | length) > 0' "$LICENSED_JSON" >/dev/null ||
+  fail "$LAST_CMD" "the company with licensable pdufa_dates rows has no rows or no licensed credit in its dataset response"
 run 0 --wait companies get "$FOUND" pdufa_dates
 [ "$(wc -l <"$LAST_OUT")" -ge 2 ] || fail "$LAST_CMD" "table has no header plus a row"
 head -n1 "$LAST_OUT" | grep -q "$(printf '\t')" || fail "$LAST_CMD" "table header is not tab separated"
