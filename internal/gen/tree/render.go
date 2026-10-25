@@ -54,6 +54,9 @@ type opView struct {
 	Ident string
 }
 
+// IntID reports an integer path parameter, which the generated call parses from the argument.
+func (v opView) IntID() bool { return v.HasID && v.IDType != "string" }
+
 var opTmpl = template.Must(template.New("op").Funcs(template.FuncMap{"q": func(s string) string { return fmt.Sprintf("%q", s) }}).Parse(`
 func {{.Ident}}() *Op {
 	fs := pflag.NewFlagSet({{q .Op.OperationID}}, pflag.ContinueOnError)
@@ -61,9 +64,13 @@ func {{.Ident}}() *Op {
 	fs.{{.Define}}({{q .Flag}}, {{if eq .Type "string"}}""{{else if eq .Type "boolean"}}false{{else}}0{{end}}, {{q .Desc}})
 {{- end}}
 	return &Op{
-		Key: {{q .Key}}, IDName: {{q .IDName}}, Short: {{q .Summary}}, Path: {{q .Path}}, Escaped: {{.Escaped}}, Flags: fs,
+		Key: {{q .Key}}, IDName: {{q .IDName}},{{if .IntID}} IDType: {{q .IDType}},{{end}} Short: {{q .Summary}}, Path: {{q .Path}}, Escaped: {{.Escaped}}, Flags: fs,
 		Call: func(ctx context.Context, cl *sdk.APIClient, id string, fs *pflag.FlagSet) (*http.Response, error) {
-			{{if .HasID}}r := cl.{{.Service}}.{{.Method}}(ctx, id){{else}}_ = id
+			{{if .IntID}}n, err := ParseIntID({{q .IDName}}, id, {{q .IDType}})
+			if err != nil {
+				return nil, err
+			}
+			r := cl.{{.Service}}.{{.Method}}(ctx, {{.IDType}}(n)){{else if .HasID}}r := cl.{{.Service}}.{{.Method}}(ctx, id){{else}}_ = id
 			r := cl.{{.Service}}.{{.Method}}(ctx){{end}}
 {{- range .Params}}
 			if fs.Changed({{q .Flag}}) {

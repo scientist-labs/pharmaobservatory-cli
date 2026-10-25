@@ -314,9 +314,17 @@ func (a *CellLinesAPIService) CellLinesSiteTrialsExecute(r ApiCellLinesSiteTrial
 
 // fakeOp is SDK source for one parameterless GET, shaped like the generated code parseSDK reads.
 func fakeOp(service, method, path string, withID bool) string {
-	sig, pos := "ctx context.Context", ""
 	if withID {
-		sig, pos = "ctx context.Context, id string", ", id: id"
+		return fakeTypedOp(service, method, path, "string")
+	}
+	return fakeTypedOp(service, method, path, "")
+}
+
+// fakeTypedOp is fakeOp whose id positional has the Go type idType ("" for no id).
+func fakeTypedOp(service, method, path, idType string) string {
+	sig, pos := "ctx context.Context", ""
+	if idType != "" {
+		sig, pos = "ctx context.Context, id "+idType, ", id: id"
 	}
 	return `
 type Api` + method + `Request struct {
@@ -383,4 +391,88 @@ func TestSeparatorCollisionsAreGeneratorErrors(t *testing.T) {
 			t.Fatalf("want an error naming both object types, got %v", err)
 		}
 	})
+}
+
+// gadgetsFixture adds a gadgets page whose get takes an id of SDK type getType and whose one
+// dataset takes an id of type secType, with the document declaring the path parameter as specType.
+func gadgetsFixture(t *testing.T, getType, secType, specType string) string {
+	t.Helper()
+	dir := fixture(t)
+	edit(t, dir, "api/openapi.yaml", "  /api/v1/whoami:", `  /api/v1/gadgets/{id}:
+    get:
+      operationId: gadgets.get
+      summary: One gadget
+      tags: [gadgets]
+      parameters:
+      - {name: id, in: path, required: true, schema: {type: `+specType+`}}
+  /api/v1/gadgets/{id}/bits:
+    get:
+      operationId: gadgets.bits
+      summary: Bits of a gadget
+      tags: [gadgets]
+      parameters:
+      - {name: id, in: path, required: true, schema: {type: `+specType+`}}
+  /api/v1/whoami:`)
+	appendFile(t, dir, "api_widgets.go", "\ntype GadgetsAPIService service\n"+
+		fakeTypedOp("GadgetsAPIService", "GadgetsGet", "/api/v1/gadgets/{id}", getType)+
+		fakeTypedOp("GadgetsAPIService", "GadgetsBits", "/api/v1/gadgets/{id}/bits", secType))
+	edit(t, dir, "client.go", "WidgetsAPI *WidgetsAPIService", "WidgetsAPI *WidgetsAPIService\n\tGadgetsAPI *GadgetsAPIService")
+	return dir
+}
+
+// An integer positional (int32, int64) is supported: the model carries its Go type and the
+// generated call parses the argument with pages.ParseIntID and converts it for the SDK method.
+func TestIntegerPositionalParameter(t *testing.T) {
+	m := build(t, gadgetsFixture(t, "int32", "int64", "integer"))
+	if g := find(m, KindGet, "gadgets", ""); g == nil || !g.HasID || g.IDType != "int32" {
+		t.Fatalf("get: %+v", g)
+	}
+	if d := find(m, KindIDSection, "gadgets", "bits"); d == nil || d.IDType != "int64" {
+		t.Fatalf("dataset: %+v", d)
+	}
+	if w := find(m, KindGet, "widgets", ""); w.IDType != "string" {
+		t.Fatalf("a string id keeps its type: %+v", w)
+	}
+	files, err := Render(m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var gadgets, widgets string
+	for _, f := range files {
+		switch f.Name {
+		case "zz_generated_gadgets.go":
+			gadgets = string(f.Data)
+		case "zz_generated_widgets.go":
+			widgets = string(f.Data)
+		}
+	}
+	for _, want := range []string{
+		`IDName: "id", IDType: "int32"`,
+		`n, err := ParseIntID("id", id, "int32")`,
+		`r := cl.GadgetsAPI.GadgetsGet(ctx, int32(n))`,
+		`IDName: "id", IDType: "int64"`,
+		`r := cl.GadgetsAPI.GadgetsBits(ctx, int64(n))`,
+	} {
+		if !strings.Contains(gadgets, want) {
+			t.Errorf("gadgets page lacks %q:\n%s", want, gadgets)
+		}
+	}
+	if strings.Contains(widgets, "IDType") || strings.Contains(widgets, "ParseIntID") || !strings.Contains(widgets, "WidgetsGet(ctx, id)") {
+		t.Errorf("a string id must pass through verbatim:\n%s", widgets)
+	}
+}
+
+func TestPositionalTypeErrors(t *testing.T) {
+	for name, c := range map[string]struct{ getType, specType, want string }{
+		"unsupported Go type":          {"float64", "number", "positional parameter of type float64 is not supported"},
+		"document string, SDK integer": {"int32", "string", `path parameter "id" is string in the document but int32 in the SDK`},
+		"document integer, SDK string": {"string", "integer", `path parameter "id" is integer in the document but string in the SDK`},
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := Build(gadgetsFixture(t, c.getType, c.getType, c.specType), "m", "v")
+			if err == nil || !strings.Contains(err.Error(), c.want) {
+				t.Fatalf("want %q, got %v", c.want, err)
+			}
+		})
+	}
 }
