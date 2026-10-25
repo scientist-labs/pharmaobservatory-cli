@@ -12,6 +12,17 @@ import (
 	"strings"
 )
 
+// sdkPos is one positional parameter of a public SDK method.
+type sdkPos struct {
+	Name   string
+	GoType string // string, or an integer type in PositionalTypes
+}
+
+// PositionalTypes are the Go types a positional (path) parameter may have. A string is passed
+// through verbatim; an integer is parsed from the argument by pages.ParseIntID, which must know
+// every integer type listed here.
+var PositionalTypes = map[string]bool{"string": true, "int": true, "int8": true, "int16": true, "int32": true, "int64": true}
+
 type sdkSetter struct {
 	Name   string
 	GoType string
@@ -23,7 +34,7 @@ type sdkOp struct {
 	Service    string // service type, for example CellLinesAPIService
 	HTTP       string // GET, from http.MethodGet
 	Path       string
-	Positional []string // positional parameter names after ctx
+	Positional []sdkPos // positional parameters after ctx
 	Query      map[string]sdkSetter
 }
 
@@ -140,11 +151,12 @@ func parseSDK(dir string) (map[string]sdkOp, map[string]string, error) {
 			if i == 0 { // ctx
 				continue
 			}
-			if t := types.ExprString(f.Type); t != "string" {
+			t := types.ExprString(f.Type)
+			if !PositionalTypes[t] {
 				return nil, nil, fmt.Errorf("%s.%s: positional parameter of type %s is not supported", service, method, t)
 			}
 			for _, n := range f.Names {
-				op.Positional = append(op.Positional, n.Name)
+				op.Positional = append(op.Positional, sdkPos{Name: n.Name, GoType: t})
 			}
 		}
 		if _, dup := ops[op.key()]; dup {

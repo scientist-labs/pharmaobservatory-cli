@@ -87,9 +87,8 @@ Manager). Where none is available, or with `PHARMA_CREDENTIAL_STORE=file`, it li
 
 ## Commands
 
-One command group per object type (`biomarkers`, `cell-lines`, `companies`, `conditions`, `legal-entities`,
-`sites`, `trials`),
-plus `datasets` for the catalog, generated from the API document. The shapes:
+One command group per object type (`companies`, `trials`, `hospitals` and the rest; `pharma --help` lists the
+ones this build has), plus `datasets` for the catalog, generated from the API document. The shapes:
 
 ```sh
 pharma companies list                                  # the object type's primary dataset
@@ -103,7 +102,8 @@ Real examples: `pharma companies get <id> sponsor-trials --scope group`, `pharma
 `pharma biomarkers get ESR1 biomarker-evidence`, `pharma trials get NCT01234567 trial-drugs`, `pharma conditions get
 D001943 condition-trials`. Command and dataset names are the API's names with `-` for
 `_`, and the API's own spelling works too (`pharma cell_lines list`, `pharma sites get <id> site_trials`). Ids
-are passed through verbatim. Put the id and dataset before any flags. `pharma <object> --help` lists the
+are passed through verbatim, except where the API declares an integer id (for example `hospitals`): that
+id is parsed as an integer and a malformed one is a usage error (exit 2) before any request. Put the id and dataset before any flags. `pharma <object> --help` lists the
 datasets; `pharma <object> get <id> <dataset> --help` lists a dataset's flags. A parameter named like a
 global flag (for example `--json`) is exposed as `--param-json`.
 

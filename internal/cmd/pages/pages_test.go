@@ -273,3 +273,40 @@ func TestFilterFlagBuildsTheQueryAndRefusesReservedKeys(t *testing.T) {
 		t.Error("an operation without --cursor (a record get) takes no --filter")
 	}
 }
+
+// An integer path parameter is parsed before any request: a bad argument is a usage error naming
+// the parameter and its range, the help says it is an integer, and a good one reaches the call.
+func TestIntegerIDIsParsedAndDocumented(t *testing.T) {
+	var got string
+	get := &Op{IDName: "id", IDType: "int32", Short: "One gadget", Path: "/api/v1/gadgets/{id}", Flags: pflag.NewFlagSet("g", pflag.ContinueOnError),
+		Call: func(_ context.Context, _ *sdk.APIClient, id string, _ *pflag.FlagSet) (*http.Response, error) {
+			got = id
+			return nil, errors.New("stop")
+		}}
+	called := false
+	env := &Env{Client: func() (*Client, error) { called = true; return &Client{}, nil }}
+	root := &cobra.Command{Use: "pharma"}
+	root.AddCommand(buildFrom(env, []*PageSpec{{Slug: "gadgets", Get: get}})...)
+	g, _, _ := root.Find([]string{"gadgets", "get"})
+	if !strings.Contains(g.Long, "The id is an integer (int32).") {
+		t.Errorf("help does not document the integer id:\n%s", g.Long)
+	}
+	for _, bad := range []string{"abc", "1.5", "2147483648"} {
+		called = false
+		root.SetArgs([]string{"gadgets", "get", bad})
+		root.SetOut(io.Discard)
+		root.SetErr(io.Discard)
+		err := root.Execute()
+		if err == nil || !strings.Contains(err.Error(), "the id must be an integer from -2147483648 to 2147483647") || called {
+			t.Errorf("%s: want a usage error before any request, got %v (client built: %v)", bad, err, called)
+		}
+	}
+	root.SetArgs([]string{"gadgets", "get", "42"})
+	_ = root.Execute()
+	if got != "42" {
+		t.Errorf("a valid id must reach the call, got %q", got)
+	}
+	if n, err := ParseIntID("id", "9000000000", "int64"); err != nil || n != 9000000000 {
+		t.Errorf("int64: %d %v", n, err)
+	}
+}

@@ -79,8 +79,11 @@ func Build(dir, module, version string) (*Model, error) {
 		if op.HasID {
 			wantPos = 1
 		}
-		if len(so.Positional) != wantPos || (wantPos == 1 && so.Positional[0] != op.IDName) {
+		if len(so.Positional) != wantPos || (wantPos == 1 && so.Positional[0].Name != op.IDName) {
 			return nil, fmt.Errorf("GET %s: SDK positional parameters %v do not match the path", r.Path, so.Positional)
+		}
+		if wantPos == 1 {
+			op.IDType = so.Positional[0].GoType
 		}
 		specQ := map[string]specParam{}
 		for _, p := range r.Op.Parameters {
@@ -88,6 +91,13 @@ func Build(dir, module, version string) (*Model, error) {
 			case "path":
 				if p.Name != op.IDName {
 					return nil, fmt.Errorf("GET %s: path parameter %q is not supported", r.Path, p.Name)
+				}
+				t := p.Schema.Type
+				if t == "" {
+					t = "string"
+				}
+				if ok := (t == "string" && op.IDType == "string") || (t == "integer" && op.IDType != "string"); !ok {
+					return nil, fmt.Errorf("GET %s: path parameter %q is %s in the document but %s in the SDK", r.Path, p.Name, t, op.IDType)
 				}
 			case "query":
 				if !paramRe.MatchString(p.Name) {

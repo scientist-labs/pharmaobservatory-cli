@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/url"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -29,6 +30,7 @@ import (
 type Op struct {
 	Key     string
 	IDName  string // the path parameter (id, or name for datasets), empty when the operation takes none
+	IDType  string // an integer Go type (int32, int64, ...) when the path parameter is an integer; empty for a string
 	Short   string
 	Path    string
 	Escaped bool
@@ -44,6 +46,41 @@ type PageSpec struct {
 	List, Get  *Op
 	IDSections []*Op // GET /api/v1/{page}/{id}/{key}
 	Sections   []*Op // GET /api/v1/{page}/{key}
+}
+
+// intBits is the bit size each integer path-parameter type is parsed at.
+var intBits = map[string]int{"int": strconv.IntSize, "int8": 8, "int16": 16, "int32": 32, "int64": 64}
+
+// ParseIntID parses an integer path parameter from its argument. A malformed or out-of-range
+// value is a usage error naming the parameter and its range.
+func ParseIntID(name, arg, goType string) (int64, error) {
+	bits, ok := intBits[goType]
+	if !ok {
+		return 0, fmt.Errorf("the %s parameter has unsupported type %s", name, goType)
+	}
+	n, err := strconv.ParseInt(strings.TrimSpace(arg), 10, bits)
+	if err != nil {
+		lo, hi := int64(-1)<<(bits-1), int64(1)<<(bits-1)-1
+		return 0, apierr.Usage(fmt.Errorf("the %s must be an integer from %d to %d, got %q", name, lo, hi, sanitize.Line(arg)))
+	}
+	return n, nil
+}
+
+// checkID refuses an argument the operation's path parameter cannot take, before any request.
+func (o *Op) checkID(arg string) error {
+	if o.IDType == "" {
+		return nil
+	}
+	_, err := ParseIntID(o.IDName, arg, o.IDType)
+	return err
+}
+
+// idHelp describes how the get argument is read, for the help text.
+func idHelp(o *Op, idName string) string {
+	if o != nil && o.IDType != "" {
+		return "The " + idName + " is an integer (" + o.IDType + ")."
+	}
+	return "The " + idName + " is passed through verbatim and URL-encoded once."
 }
 
 // OpRef names a generated operation without its code, for the tests.
@@ -270,7 +307,11 @@ func getCmd(e *Env, s *PageSpec) *cobra.Command {
 		c.Short = "Get one record"
 	}
 	var long strings.Builder
-	long.WriteString(c.Short + ".\n\nThe " + idName + " is passed through verbatim and URL-encoded once. Put the " + idName + " and the dataset before any flags.")
+	idOp := s.Get
+	if idOp == nil && len(s.IDSections) > 0 {
+		idOp = s.IDSections[0]
+	}
+	long.WriteString(c.Short + ".\n\n" + idHelp(idOp, idName) + " Put the " + idName + " and the dataset before any flags.")
 	if s.Get != nil {
 		long.WriteString("\n\n  " + apierr.Bin + " " + name + " get " + arg + "\n      " + s.Get.Short + "\n      GET " + s.Get.Path)
 	}
@@ -327,7 +368,10 @@ func getCmd(e *Env, s *PageSpec) *cobra.Command {
 			if op != s.Get {
 				use += " " + cmdKey(op.Key)
 			}
-			_, err := fmt.Fprintf(cmd.OutOrStdout(), "%s\n\nUsage:\n  %s %s %s [flags]\n\nFlags:\n%s", op.Short+"\nGET "+op.Path, apierr.Bin, name, use, op.Flags.FlagUsages())
+			_, err := fmt.Fprintf(cmd.OutOrStdout(), "%s\n\n%s\n\nUsage:\n  %s %s %s [flags]\n\nFlags:\n%s", op.Short+"\nGET "+op.Path, idHelp(op, idName), apierr.Bin, name, use, op.Flags.FlagUsages())
+			return err
+		}
+		if err := op.checkID(pos[0]); err != nil {
 			return err
 		}
 		return e.run(cmd, op, pos[0], op.Flags)

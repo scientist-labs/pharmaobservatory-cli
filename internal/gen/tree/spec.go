@@ -45,6 +45,7 @@ type Op struct {
 	Method      string // SDK method name
 	HasID       bool
 	IDName      string // the path parameter's wire name (id, or name for datasets), empty without one
+	IDType      string // the SDK's Go type for it: string, or an integer type in PositionalTypes
 	Escaped     bool   // a collection section whose key is a reserved page-group name
 }
 
