@@ -16,11 +16,17 @@ import (
 // single retry on expired_token live in the transport, not in the SDK's own auth hooks, so the
 // SDK sees an ordinary http.Client. The User-Agent is not set here: s.HC's transport sets it on
 // every request (WithUserAgent), raw Session calls included.
+//
+// The outer client deliberately has no Timeout. The --wait sleep runs inside RoundTrip, so an
+// outer Client.Timeout would cover the first attempt, the sleep and the retry together, and any
+// Retry-After near or over it would end in "context deadline exceeded" (#47). The timeout lives on
+// s.HC instead, which bearerTransport.send uses for every attempt: each attempt, headers and body,
+// gets its own s.HC.Timeout. The sleep is bounded by apierr.MaxWait and by the request context.
 func (s *Session) SDK() *sdk.APIClient {
 	cfg := sdk.NewConfiguration()
 	cfg.Servers = sdk.ServerConfigurations{{URL: s.Profile.Base()}}
 	cfg.OperationServers = nil
-	cfg.HTTPClient = &http.Client{Transport: &bearerTransport{s: s}, Timeout: s.HC.Timeout, CheckRedirect: apierr.SecureRedirect}
+	cfg.HTTPClient = &http.Client{Transport: &bearerTransport{s: s}, CheckRedirect: apierr.SecureRedirect}
 	return sdk.NewAPIClient(cfg)
 }
 
