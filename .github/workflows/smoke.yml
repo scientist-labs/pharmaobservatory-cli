@@ -35,7 +35,9 @@
 # ONE ISSUE. A failing run opens or updates a single issue labelled smoke-test; it never opens a
 # second one while one is open and never closes it.
 #
-# The binary name is not written here: the build step takes whatever `go build ./cmd/...` produces.
+# The build step builds only the CLI's main package (./cmd/pharma). It used to build ./cmd/... and
+# assert one binary came out, which broke every run from 2026-10-20 once cmd/gendocs (the man-page
+# generator, #38) became a second main package. bin/smoke still takes the binary path from $CLI.
 name: Smoke
 
 on:
@@ -82,7 +84,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/clibin"
-          go build -o "$RUNNER_TEMP/clibin/" ./cmd/...
+          go build -o "$RUNNER_TEMP/clibin/" ./cmd/pharma
           test "$(find "$RUNNER_TEMP/clibin" -type f | wc -l)" -eq 1
           echo "CLI=$(find "$RUNNER_TEMP/clibin" -type f)" >>"$GITHUB_ENV"
       - name: Inject the credential into the file store
