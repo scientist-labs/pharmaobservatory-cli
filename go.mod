@@ -3,7 +3,7 @@ module github.com/scientist-labs/pharmaobservatory-cli
 go 1.24
 
 require (
-	github.com/scientist-labs/pharmaobservatory-sdks/go v0.1.9
+	github.com/scientist-labs/pharmaobservatory-sdks/go v0.1.10
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.9
 	github.com/zalando/go-keyring v0.2.8
